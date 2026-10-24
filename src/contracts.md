@@ -15,6 +15,12 @@ Hazard IDs and pickup IDs are opaque strings, never numeric animation inputs. Ha
 ## Audio
 `export class RainAudio` with `constructor()`, async `unlock()`, `setMuted(bool)`, `update(state,dt)`, `play(name)`, `dispose()`. Names: start/dash/near/drop/catch/impact/win/pause. Web Audio synthesized rain + original sparse ambient music, no external assets. Must unlock from first user gesture. No autoplay errors or excessive per-frame oscillator allocations. Optional mute persisted by root.
 
+## Iteration 05 (0.4.0) — rooftop intro
+
+Each run now starts in `mode='intro'` for 3.2 seconds, with finite introTime/introProgress and stages roof/approach/jump/transition. Gameplay clocks, fall distance, score and controls stay frozen. UI adds skipIntro(); Space/Enter skip, Escape/blur pause. Paused state preserves resumeMode to restore intro, including exact scene/camera frame. RainGame.start's third option `{skipIntro:true}` is only for gameplay fixtures; normal start shows the scene. The original 0.8s launch hop must not repeat in playing.
+
+Scene intros use deterministic state time, actual grounded soles and a close rooftop camera. At completion/skip the flight coordinate is exactly (0,1.2,3), launchProgress=1 and normal camera returns. scene.introPose and read-only window.__RAIN_PAIN__.intro() expose active/stage/time, actual player/camera/feet coordinates for proof. Ragdoll, blood, window threats and flight HUD are inactive/hidden in intro. `takeoff` audio occurs once at jump or early skip. Full specification: docs/ITERATION_05.md.
+
 ## Iteration 04 (0.3.0) — landing style
 
 `impactMode` is a saved menu setting ('arcade' default | 'hard'). `runImpactMode` snapshots it at start and is copied into lastResult; UI actions add `impactMode(mode)`. The previous non-graphic landing rules above apply to arcade. Hard+win has a 3.6-second physics/blood cinematic instead of arcade's 1.3 seconds; both end with the exact same phrase/grades/actions. Caught never activates landing physics/blood.

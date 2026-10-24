@@ -65,7 +65,7 @@ try {
       let sceneObjectCount = 0;
       scene.scene.traverse(() => sceneObjectCount++);
       const game = new RainGame();
-      game.start(5, 1234567);
+      game.start(5, 1234567, { skipIntro: true });
       const authored = new RainGame();
       const authoredSnapshots = new Map();
       const lastActivePalms = new Map();
@@ -73,7 +73,7 @@ try {
 
       function authoredState(distance) {
         if (authoredSnapshots.has(distance)) return structuredClone(authoredSnapshots.get(distance));
-        authored.start(1, 20261023);
+        authored.start(1, 20261023, { skipIntro: true });
         // Follow the promised safe route using the real simulation, including
         // launch acceleration, authored waves, tracking and target locking.
         for (let frame = 0; frame < 3000 && authored.state.distance < distance && authored.state.mode === 'playing'; frame++) {
@@ -112,12 +112,25 @@ try {
         return { min, max };
       };
 
-      window.renderSample = ({ mode = 'playing', distance = 60, dash = false, slow = false, outcome = null, frames = 1, dt = 0.05, impactMode = 'arcade', runImpactMode = impactMode, reducedMotion = false, launchProgress = 1, nearTimer = 0, pickupTimer = 0, fallIntensity = 0.5, fixture = null, authoredDistance = null, expectHunterStage = null, expectedPhysicsTime = null, expectContact = false }) => {
-        const state = authoredDistance === null ? structuredClone(game.state) : authoredState(authoredDistance);
+      window.renderSample = ({ mode = 'playing', resumeMode = 'playing', distance = 60, dash = false, slow = false, outcome = null, frames = 1, dt = 0.05, impactMode = 'arcade', runImpactMode = impactMode, reducedMotion = false, launchProgress = 1, nearTimer = 0, pickupTimer = 0, fallIntensity = 0.5, fixture = null, authoredDistance = null, expectHunterStage = null, expectedPhysicsTime = null, expectContact = false, introTime = null, skipIntro = false }) => {
+        let state = authoredDistance === null ? structuredClone(game.state) : authoredState(authoredDistance);
+        if (introTime !== null) {
+          const introGame = new RainGame({ saved: { impactMode, reducedMotion } });
+          introGame.start(1, 20261023);
+          for (let remaining = introTime; remaining > 0.000001; remaining -= 0.02) introGame.update(Math.min(0.02, remaining));
+          if (skipIntro) introGame.skipIntro();
+          state = structuredClone(introGame.state);
+          if (mode !== 'paused') mode = state.mode;
+          else resumeMode = 'intro';
+          distance = state.distance;
+          launchProgress = state.launchProgress;
+          fallIntensity = 0;
+        }
+        const intro = mode === 'intro' || mode === 'paused' && resumeMode === 'intro';
         const authoredMode = state.mode;
         if (authoredDistance !== null) distance = state.distance;
         Object.assign(state, {
-          mode, distance, progress: distance / state.height, x: authoredDistance === null ? 1.4 : state.x, velocity: dash ? 22 : state.velocity,
+          mode, resumeMode, distance, progress: distance / state.height, x: introTime !== null ? state.x : authoredDistance === null ? 1.4 : state.x, velocity: dash ? 22 : state.velocity,
           dashTimer: dash ? 0.2 : 0, slow, outcome, impactMode, runImpactMode, reducedMotion, shake: 0,
           launchProgress, nearTimer, pickupTimer, fallIntensity,
           fallSpeed: state.fallSpeed || state.speed,
@@ -170,7 +183,22 @@ try {
             { id: 'risk-drop-id', at: 63, x: 3.7, y: -1.2, collected: false, risk: true },
           ];
         }
-        for (let frame = 0; frame < frames; frame++) scene.update(state, dt);
+        let pausedCamera = null;
+        let pausedPlayer = null;
+        let pausedRoof = null;
+        const pauseFailures = [];
+        for (let frame = 0; frame < frames; frame++) {
+          scene.update(state, dt);
+          if (intro && mode === 'paused') {
+            const camera = [...scene.camera.position.toArray(), ...scene.camera.quaternion.toArray()];
+            const player = [...scene.player.position.toArray(), ...scene.player.quaternion.toArray()];
+            const roof = scene.roof.position.toArray();
+            if (pausedCamera && (camera.some((value, axis) => !near(value, pausedCamera[axis])) || player.some((value, axis) => !near(value, pausedPlayer[axis])) || roof.some((value, axis) => !near(value, pausedRoof[axis])))) pauseFailures.push('paused intro keeps the exact camera, character and rooftop pose');
+            pausedCamera = camera;
+            pausedPlayer = player;
+            pausedRoof = roof;
+          }
+        }
 
         const nonFiniteObjects = [];
         let nonFiniteGeometryCount = 0;
@@ -185,7 +213,7 @@ try {
           const vertices = object.geometry?.attributes.position?.array;
           if (vertices?.some(value => !Number.isFinite(value))) nonFiniteGeometryCount++;
         });
-        const visualFailures = [];
+        const visualFailures = [...pauseFailures];
         if (scene.resources.size !== resourceCount) visualFailures.push('repeated render effects keep the resource pool bounded');
         const hardWin = runImpactMode === 'hard' && outcome === 'win' && ['impact', 'result'].includes(mode);
         const effectiveVisible = object => {
@@ -249,7 +277,7 @@ try {
           } else {
             impactStartJoints = null;
             if (hard.active || ragdoll.active || ragdoll.simulating || ragdoll.time !== 0 || ragdoll.contacts !== 0 || effectiveVisible(hard.group) || visibleStains.length || visibleParticles.length) visualFailures.push('arcade, menu, flight and caught keep ragdoll physics and blood inactive');
-            if (!near(scene.camera.position.z, scene.cameraZ) || !near(scene.camera.position.y, 4.2)) visualFailures.push('retry, menu, arcade and caught restore the standard camera');
+            if (!intro && (!near(scene.camera.position.z, scene.cameraZ) || !near(scene.camera.position.y, 4.2))) visualFailures.push('retry, menu, arcade and caught restore the standard camera');
             hardLanding = { active: hard.active, simulating: ragdoll.simulating, time: ragdoll.time, age: hard.age, contacts: ragdoll.contacts, visibleStains: visibleStains.length, visibleParticles: visibleParticles.length };
           }
         }
@@ -266,17 +294,19 @@ try {
         })) visualFailures.push('window people and both arms reuse their original scene nodes');
         if (authoredDistance !== null && authoredMode !== 'playing') visualFailures.push('seeded safe route remains playable');
         if (mode === 'playing' && launchProgress === 1 && scene.player.position.y !== PLAYER_Y) visualFailures.push('flight player matches simulation y');
-        if (mode === 'playing' && launchProgress < 1 && !(scene.roof.position.y < 9.7 + distance)) visualFailures.push('launch ledge travels from under boots');
+        // Legacy launch-progress fixtures remain covered, but playing now starts
+        // after the rooftop intro and must never replay its ledge animation.
+        if (mode === 'playing' && !near(scene.roof.position.y, 9.7 + distance)) visualFailures.push('flight keeps the roof above the player without replaying the intro ledge');
         if (nearTimer > 0 && mode === 'playing' && !scene.nearRing.visible) visualFailures.push('near miss feedback appears');
         if (!near(scene.renderer.getPixelRatio(), Math.min(window.devicePixelRatio, 1.65))) visualFailures.push('DPR follows the renderer quality cap');
         if (scene.renderer.domElement.width !== Math.floor(scene.width * scene.renderer.getPixelRatio()) || scene.renderer.domElement.height !== Math.floor(scene.height * scene.renderer.getPixelRatio())) visualFailures.push('framebuffer tracks DPR and resize');
-        if (mode !== 'menu' && ['playing', 'paused', 'caught'].includes(mode)) {
+        if (!intro && mode !== 'menu' && ['playing', 'paused', 'caught'].includes(mode)) {
           for (const x of [LANES[0], LANES.at(-1)]) {
             const projected = new Vector3(x, PLAYER_Y, 3).project(scene.camera);
             if (!Number.isFinite(projected.x) || Math.abs(projected.x) >= 1 || Math.abs(projected.y) >= 1) visualFailures.push('both edge lanes fit in the camera after portrait or resize');
           }
         }
-        const visibleHazards = (mode === 'menu' ? scene.menuHands : state.hazards).filter(hazard => Number.isFinite(hazard.x) && Number.isFinite(hazard.y) && Number.isFinite(hazard.baseX) && hazard.y >= -39 && hazard.y <= 33 && (hazard.warning > 0 || hazard.active)).slice(0, scene.hands.length);
+        const visibleHazards = (intro ? [] : mode === 'menu' ? scene.menuHands : state.hazards).filter(hazard => Number.isFinite(hazard.x) && Number.isFinite(hazard.y) && Number.isFinite(hazard.baseX) && hazard.y >= -39 && hazard.y <= 33 && (hazard.warning > 0 || hazard.active)).slice(0, scene.hands.length);
         const visibleActors = scene.hands.filter(actor => actor.group.visible);
         const pairedActors = [];
         if (visibleActors.length !== visibleHazards.length) visualFailures.push('each visible hazard owns exactly one window person');
@@ -358,6 +388,30 @@ try {
           if (!visible.some(pickup => pickup.diamond.visible && pickup.gem.material === pickup.riskCrystal) || !visible.some(pickup => pickup.ring.visible && pickup.gem.material === pickup.crystal)) visualFailures.push('risk and normal drops have distinct shapes and materials');
         }
 
+        let introPose = null;
+        if (intro) {
+          const pose = scene.introPose;
+          if (!pose?.active || pose.stage !== state.introStage || !near(pose.time, state.introTime)) visualFailures.push('rooftop presentation follows the real simulation intro stage and time');
+          if (!effectiveVisible(scene.roof) || !effectiveVisible(scene.player) || scene.ground.visible || visibleActors.length || scene.pickups.some(pickup => pickup.group.visible)) visualFailures.push('intro shows the rooftop and heroine while keeping street, traps and drops hidden');
+          const feet = (pose?.feet || []).map(point => point.toArray());
+          const soleBottoms = scene.legs.map(leg => {
+            let bottom = Infinity;
+            const vertices = leg.sole?.geometry.attributes.position;
+            for (let vertex = 0; vertex < (vertices?.count || 0); vertex++) bottom = Math.min(bottom, new Vector3().fromBufferAttribute(vertices, vertex).applyMatrix4(leg.sole.matrixWorld).y);
+            return bottom;
+          });
+          if (feet.length !== 2 || feet.flat().some(value => !Number.isFinite(value)) || !Number.isFinite(pose?.roofSurfaceY) || !Number.isFinite(pose?.roofEdgeZ)) visualFailures.push('intro reports both actual finite boot soles and the physical rooftop edge');
+          if (state.introStage === 'roof' && (!pose?.grounded || feet.some(point => Math.abs(point[1] - pose.roofSurfaceY) > 0.002))) visualFailures.push('both boots start grounded on the rooftop surface');
+          if (state.introStage === 'approach' && (!pose?.grounded || !soleBottoms.some(bottom => Math.abs(bottom - pose.roofSurfaceY) < 0.002))) visualFailures.push('approach leaves a planted boot on the roof instead of floating');
+          if (state.introStage === 'jump' && state.introTime > 2.4 && scene.player.position.z <= pose?.roofEdgeZ) visualFailures.push('the jump carries the heroine beyond the front roof edge');
+          const projectedPlayer = worldPosition(scene.player).project(scene.camera).toArray();
+          const projectedEdge = new Vector3(0, pose?.roofSurfaceY, pose?.roofEdgeZ).project(scene.camera).toArray();
+          if (Math.abs(projectedPlayer[0]) > 0.85 || Math.abs(projectedPlayer[1]) > 0.85 || projectedPlayer[2] <= -1 || projectedPlayer[2] >= 1) visualFailures.push('intro camera keeps the heroine clearly inside the desktop and portrait frame');
+          if (['roof', 'approach'].includes(state.introStage) && (Math.abs(projectedEdge[0]) >= 1 || Math.abs(projectedEdge[1]) >= 1 || projectedEdge[2] <= -1 || projectedEdge[2] >= 1)) visualFailures.push('the roof edge stays visible before takeoff at every tested aspect ratio');
+          introPose = { stage: pose?.stage, time: pose?.time, feet, soleBottoms, grounded: pose?.grounded, roofSurfaceY: pose?.roofSurfaceY, roofEdgeZ: pose?.roofEdgeZ, projectedPlayer, projectedEdge, roofPosition: scene.roof.position.toArray() };
+        }
+        if (skipIntro && (!near(scene.player.position.x, 0) || !near(scene.player.position.y, PLAYER_Y) || !near(scene.player.position.z, 3) || !near(scene.camera.position.x, 0) || !near(scene.camera.position.y, 4.2) || !near(scene.camera.position.z, scene.cameraZ) || scene.introPose?.active)) visualFailures.push('skipping intro immediately restores the exact normal player and camera coordinates');
+
         // Read the final framebuffer synchronously before the browser clears it.
         const gl = scene.renderer.getContext();
         const width = gl.drawingBufferWidth;
@@ -397,7 +451,7 @@ try {
           playerPosition: scene.player.position.toArray(), visibleHunters: state.hazards.filter(hazard => hazard.type === 'hunter' && hazard.warning > 0).map(hazard => hazard.stage),
           hunterStates: state.hazards.filter(hazard => hazard.type === 'hunter' && hazard.warning > 0).map(hazard => ({ stage: hazard.stage, phase: hazard.phase, x: hazard.x, y: hazard.y, targetX: hazard.targetX, locked: hazard.locked })),
           resourceCount: scene.resources.size, drawCalls: scene.renderer.info.render.calls,
-          pairedActors, hardLanding, cameraPosition: scene.camera.position.toArray(), cameraQuaternion: scene.camera.quaternion.toArray(),
+          pairedActors, hardLanding, introPose, introTime, resumeMode, skipIntro, cameraPosition: scene.camera.position.toArray(), cameraQuaternion: scene.camera.quaternion.toArray(),
         };
       };
       window.disposeRenderSample = () => {
@@ -475,6 +529,35 @@ try {
     // body over real frames; subsequent snapshots never respawn it in impact.
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.evaluate(() => window.resizeRenderSample());
+    const introCases = [
+      { name: 'roof', introTime: 0 },
+      { name: 'approach', introTime: 1.2 },
+      { name: 'jump', introTime: 2.45 },
+      { name: 'transition', introTime: 2.9 },
+      { name: 'transition-end', introTime: 3.199 },
+      { name: 'paused', introTime: 1.2, mode: 'paused', frames: 6 },
+      { name: 'hard-roof', introTime: 0, impactMode: 'hard', runImpactMode: 'hard' },
+      { name: 'reduced-roof', introTime: 0, reducedMotion: true, frames: 6 },
+      { name: 'skip-roof', introTime: 0, skipIntro: true },
+      { name: 'skip-jump', introTime: 2.45, skipIntro: true },
+    ];
+    for (const scenario of introCases) {
+      const sample = await page.evaluate(scenario => window.renderSample(scenario), scenario);
+      sample.name = `${viewport.name}-intro-${scenario.name}`;
+      sample.suite = 'intro';
+      samples.push(sample);
+      await page.screenshot({ path: path.join(output, `render-${label}-${sample.name}.png`) });
+      console.log(`${sample.name}: stage ${sample.introPose?.stage || 'complete'}; GL ${sample.glError}`);
+    }
+    await page.setViewportSize({ width: viewport.height, height: viewport.width });
+    await page.evaluate(() => window.resizeRenderSample());
+    const resizedIntro = await page.evaluate(() => window.renderSample({ introTime: 0 }));
+    resizedIntro.name = `${viewport.name}-intro-resized`;
+    resizedIntro.suite = 'intro';
+    samples.push(resizedIntro);
+    await page.screenshot({ path: path.join(output, `render-${label}-${resizedIntro.name}.png`) });
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.evaluate(() => window.resizeRenderSample());
     const hardCases = [
       { name: 'flight', distance: height - 3 },
       { name: 'impact-start', mode: 'impact', outcome: 'win', distance: height, expectedPhysicsTime: 0.05 },
@@ -516,11 +599,18 @@ try {
       await page.screenshot({ path: path.join(output, `render-hard-${label}-${sample.name}.png`) });
       console.log(`${sample.name}: age ${sample.hardLanding?.age?.toFixed(3)}; contacts ${sample.hardLanding?.contacts}; stains ${sample.hardLanding?.visibleStains}; GL ${sample.glError}`);
     }
+    const introCleanup = await page.evaluate(() => window.renderSample({ introTime: 0, impactMode: 'hard', runImpactMode: 'hard' }));
+    introCleanup.name = `${viewport.name}-intro-hard-retry-cleanup`;
+    introCleanup.suite = 'intro';
+    samples.push(introCleanup);
+    await page.screenshot({ path: path.join(output, `render-${label}-${introCleanup.name}.png`) });
     const disposed = await page.evaluate(() => window.disposeRenderSample());
     if (!disposed.sceneDisposed || !disposed.physicsDisposed || disposed.physicsActive || disposed.bodies || disposed.joints || disposed.canvasConnected) errors.push(`${viewport.name}: disposing the scene removes the physics bodies, joints and canvas`);
     await context.close();
   }
-  assert.equal(samples.filter(sample => sample.suite !== 'hard').length, 98, 'All 98 original arcade render cases remain explicit defaults');
+  assert.equal(samples.filter(sample => !sample.suite).length, 98, 'All 98 original arcade render cases remain explicit defaults');
+  assert.equal(samples.filter(sample => sample.suite === 'hard').length, 56, 'All 56 existing hard landing render cases remain covered');
+  assert.equal(samples.filter(sample => sample.suite === 'intro').length, 24, 'Intro stages, pause, skip, hard cleanup, reduced motion and resize cover both DPRs');
   const failures = samples.filter(sample => sample.glError !== 0 || sample.nonFiniteObjects.length || sample.nonFiniteGeometryCount || sample.visualFailures.length || (sample.largest.width >= 32 && sample.largest.height >= 32));
   await writeFile(path.join(output, `render-${label}-report.json`), JSON.stringify({ passed: !failures.length && !errors.length, errors, failures: failures.map(sample => sample.name), samples }, null, 2));
   await writeFile(path.join(output, `render-hard-${label}-report.json`), JSON.stringify({ passed: !failures.some(sample => sample.suite === 'hard') && !errors.length, errors, failures: failures.filter(sample => sample.suite === 'hard').map(sample => sample.name), samples: samples.filter(sample => sample.suite === 'hard') }, null, 2));

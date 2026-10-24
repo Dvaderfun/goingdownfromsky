@@ -630,6 +630,77 @@ kbd {
   font-size: 20px;
   margin-left: 12px;
 }
+.intro-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: linear-gradient(0deg, rgba(21, 18, 37, 0.78), transparent 32%);
+}
+.intro-caption {
+  position: absolute;
+  left: 4.45%;
+  bottom: 104px;
+  max-width: 440px;
+  animation: intro-enter var(--slow) var(--ease) both;
+}
+.intro-eyebrow {
+  margin: 0 0 12px;
+  color: var(--acid);
+  font: 9px var(--mono);
+  letter-spacing: 2px;
+}
+.intro-caption h2 {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  line-height: 1.2;
+}
+.intro-caption > p:last-child {
+  margin: 12px 0 0;
+  color: #c7c0d4;
+  font-size: 11px;
+}
+.intro-skip {
+  position: absolute;
+  right: 4.45%;
+  bottom: 108px;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 12px 18px;
+  border: 1px solid var(--line);
+  background: rgba(21, 18, 37, 0.58);
+  font-size: 11px;
+  transition: border-color var(--quick), color var(--quick);
+  animation: intro-enter var(--slow) var(--ease) both;
+}
+.intro-skip kbd {
+  color: var(--muted);
+  font: 8px var(--mono);
+  letter-spacing: 0.5px;
+}
+.intro-skip-arrow {
+  color: var(--acid);
+  font-size: 20px;
+  transition: transform var(--quick) var(--ease);
+}
+.intro-skip:hover {
+  border-color: var(--acid);
+  color: var(--acid);
+}
+.intro-skip:hover .intro-skip-arrow {
+  transform: translate(2px, 2px);
+}
+#ui[data-scene-mode="intro"] .pause-button {
+  min-width: 44px;
+  min-height: 44px;
+}
+@keyframes intro-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .game-hud {
   position: absolute;
   inset: 0;
@@ -1376,6 +1447,28 @@ kbd {
   }
 }
 @media (max-width: 760px) {
+  .intro-caption {
+    left: 24px;
+    right: 24px;
+    bottom: max(148px, calc(env(safe-area-inset-bottom) + 134px));
+    max-width: none;
+  }
+  .intro-caption h2 {
+    font-size: 26px;
+  }
+  .intro-caption > p:last-child {
+    font-size: 10px;
+  }
+  .intro-skip {
+    right: 24px;
+    bottom: max(75px, calc(env(safe-area-inset-bottom) + 62px));
+  }
+  #ui[data-scene-mode="intro"] .utilities {
+    gap: 12px;
+  }
+  #ui[data-scene-mode="intro"] .pause-button {
+    padding: 4px 10px;
+  }
   .masthead {
     height: 78px;
     margin: 0 24px;
@@ -2134,5 +2227,8 @@ kbd {
   transform: none;
 }
 .reduced-motion .primary-button:hover svg {
+  transform: none;
+}
+.reduced-motion .intro-skip:hover .intro-skip-arrow {
   transform: none;
 }

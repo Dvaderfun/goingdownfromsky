@@ -4,6 +4,11 @@ export const MAX_X = 6.65;
 export const DASH_DURATION = 0.28;
 export const DASH_COOLDOWN = 1.65;
 export const HUNTER_REACH = 1.15;
+export const INTRO_DURATION = 3.2;
+
+function introStage(time) {
+  return time < 0.8 ? 'roof' : time < 1.7 ? 'approach' : time < 2.5 ? 'jump' : time < INTRO_DURATION ? 'transition' : 'complete';
+}
 
 const FIRST_TOWER = [
   { safeLane: 2, blocked: [4] }, { safeLane: 2, blocked: [0] },
@@ -155,6 +160,7 @@ export class RainGame {
       time: 0, elapsed: 0, hazards: [], pickups: [], score: 0, combo: 0, bestCombo: 0,
       nearMisses: 0, drops: 0, focus: 0.65, slow: false, dashTimer: 0,
       riskDrops: 0, nearTimer: 0, pickupTimer: 0, launchProgress: 1,
+      introTime: INTRO_DURATION, introProgress: 1, introStage: 'complete', resumeMode: null,
       fallSpeed: 11, fallIntensity: 0, tutorialHint: '',
       dashCooldown: 0, shake: 0, wind: 0, outcome: null, lastResult: null,
       bestScore: saved.bestScore ?? 0, unlockedLevel: saved.unlockedLevel ?? 1,
@@ -167,13 +173,15 @@ export class RainGame {
     this.comboTimer = 0;
   }
 
-  start(level = 1, seed = Math.floor(Math.random() * 0xffffffff)) {
+  start(level = 1, seed = Math.floor(Math.random() * 0xffffffff), { skipIntro = false } = {}) {
     const layout = generateLevel(level, seed);
     Object.assign(this.state, layout.config, {
-      mode: 'playing', x: 0, velocity: 0, distance: 0, progress: 0, elapsed: 0,
+      mode: skipIntro ? 'playing' : 'intro', x: 0, velocity: 0, distance: 0, progress: 0, elapsed: 0,
       hazards: layout.hazards, pickups: layout.pickups, score: 0, combo: 0, bestCombo: 0,
       nearMisses: 0, drops: 0, focus: 0.65, slow: false, dashTimer: 0, dashCooldown: 0,
-      riskDrops: 0, nearTimer: 0, pickupTimer: 0, launchProgress: 0,
+      riskDrops: 0, nearTimer: 0, pickupTimer: 0, launchProgress: skipIntro ? 1 : 0,
+      introTime: skipIntro ? INTRO_DURATION : 0, introProgress: skipIntro ? 1 : 0,
+      introStage: skipIntro ? 'complete' : 'roof', resumeMode: null,
       fallSpeed: layout.config.speed * 0.76, fallIntensity: 0, tutorialHint: level === 1 ? 'A / D або ← / → — обирай траєкторію' : '',
       shake: 0, wind: 0, outcome: null, lastResult: null,
       runImpactMode: this.state.impactMode,
@@ -185,7 +193,28 @@ export class RainGame {
     this.comboTimer = 0;
     this.resultTimer = 0;
     this.hunterIntroduced = false;
+    this.introTakeoff = skipIntro;
     this.onEvent('start');
+  }
+
+  beginFlight() {
+    const s = this.state;
+    Object.assign(s, {
+      mode: 'playing', introTime: INTRO_DURATION, introProgress: 1,
+      introStage: 'complete', launchProgress: 1, resumeMode: null,
+      distance: 0, elapsed: 0, progress: 0, x: 0, velocity: 0,
+    });
+    this.resetInput();
+    if (!this.introTakeoff) {
+      this.introTakeoff = true;
+      this.onEvent('takeoff');
+    }
+  }
+
+  skipIntro() {
+    if (this.state.mode !== 'intro') return false;
+    this.beginFlight();
+    return true;
   }
 
   resetInput() {
@@ -197,12 +226,14 @@ export class RainGame {
   }
 
   move(axis) {
+    if (this.state.mode !== 'playing') return;
     this.axis = clamp(axis, -1, 1);
     this.targetX = null;
     if (this.axis) this.lastDirection = Math.sign(this.axis);
   }
 
   point(x) {
+    if (this.state.mode !== 'playing') return;
     this.targetX = clamp(x, -MAX_X, MAX_X);
   }
 
@@ -219,6 +250,7 @@ export class RainGame {
   }
 
   slow(held) {
+    if (held && this.state.mode !== 'playing') return;
     this.slowHeld = held;
     if (!held) this.focusExhausted = false;
   }
@@ -233,19 +265,23 @@ export class RainGame {
   }
 
   pause() {
-    if (this.state.mode !== 'playing') return;
+    if (!['playing', 'intro'].includes(this.state.mode)) return;
+    this.state.resumeMode = this.state.mode;
     this.state.mode = 'paused';
     this.resetInput();
     this.onEvent('pause');
   }
 
   resume() {
-    if (this.state.mode === 'paused') this.state.mode = 'playing';
+    if (this.state.mode === 'paused') {
+      this.state.mode = this.state.resumeMode === 'intro' ? 'intro' : 'playing';
+      this.state.resumeMode = null;
+    }
   }
 
   menu() {
     this.resetInput();
-    Object.assign(this.state, { mode: 'menu', outcome: null, distance: 0, progress: 0, x: 0, velocity: 0, hazards: [], pickups: [], shake: 0, nearTimer: 0, pickupTimer: 0, launchProgress: 1, tutorialHint: '', fallIntensity: 0 });
+    Object.assign(this.state, { mode: 'menu', outcome: null, distance: 0, progress: 0, x: 0, velocity: 0, hazards: [], pickups: [], shake: 0, nearTimer: 0, pickupTimer: 0, launchProgress: 1, introTime: INTRO_DURATION, introProgress: 1, introStage: 'complete', resumeMode: null, tutorialHint: '', fallIntensity: 0 });
   }
 
   addScore(amount) {
@@ -254,6 +290,7 @@ export class RainGame {
   }
 
   finish(outcome) {
+    if (this.state.mode !== 'playing') return;
     const s = this.state;
     s.outcome = outcome;
     s.mode = outcome === 'win' ? 'impact' : 'caught';
@@ -293,6 +330,18 @@ export class RainGame {
     const s = this.state;
     s.time += dt;
     s.shake = Math.max(0, s.shake - dt * 1.8);
+    if (s.mode === 'intro') {
+      s.introTime = Math.min(INTRO_DURATION, s.introTime + dt);
+      s.introProgress = s.introTime / INTRO_DURATION;
+      s.launchProgress = s.introProgress;
+      s.introStage = introStage(s.introTime);
+      if (!this.introTakeoff && s.introTime >= 1.7) {
+        this.introTakeoff = true;
+        this.onEvent('takeoff');
+      }
+      if (s.introTime >= INTRO_DURATION - 1e-9) this.beginFlight();
+      return;
+    }
     if (s.mode === 'impact' || s.mode === 'caught') {
       this.resultTimer -= dt;
       if (this.resultTimer <= 0) {
@@ -303,7 +352,7 @@ export class RainGame {
     }
     if (s.mode !== 'playing') return;
     s.elapsed += dt;
-    s.launchProgress = Math.min(1, s.elapsed / 0.8);
+    s.launchProgress = 1;
     s.nearTimer = Math.max(0, s.nearTimer - dt);
     s.pickupTimer = Math.max(0, s.pickupTimer - dt);
     const wasDashing = s.dashTimer > 0;

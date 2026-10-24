@@ -147,6 +147,7 @@ export class RainAudio {
   }
 
   update(state, dt) {
+    if (this.mode !== state.mode) this.paramClock = 0;
     this.mode = state.mode;
     this.pan = clamp((state.x || 0) / 10, -0.7, 0.7);
     if (!this.ctx || this.ctx.state !== 'running' || this.disposed) return;
@@ -155,21 +156,23 @@ export class RainAudio {
     if (this.paramClock <= 0) {
       this.paramClock = 0.1;
       const playing = state.mode === 'playing';
+      const intro = state.mode === 'intro';
       const paused = state.mode === 'paused';
       const terminal = state.mode === 'impact' || state.mode === 'caught';
       const intensity = Number.isFinite(state.fallIntensity)
         ? state.fallIntensity
         : (state.fallSpeed || state.speed || 11) / 24;
-      const motion = playing ? clamp(intensity, 0, 1) : 0;
+      const introFlight = intro ? clamp(((state.introTime || 0) - 1.7) / 1.5, 0, 1) : 0;
+      const motion = playing ? clamp(intensity, 0, 1) : introFlight * 0.3;
       const landing = playing ? clamp(((state.progress || 0) - 0.78) / 0.22, 0, 1) : 0;
       const focused = playing && state.slow;
       const cue = now < this.cueUntil;
-      const windVolume = 0.018 + motion * 0.048 + landing * 0.022 + Math.abs(state.wind || 0) * 0.002;
-      this.rain.gain.setTargetAtTime(paused ? 0.018 : terminal ? 0.028 : 0.075 + motion * 0.028, now, 0.22);
+      const windVolume = (intro ? 0.012 : 0.018) + motion * 0.048 + landing * 0.022 + Math.abs(state.wind || 0) * 0.002;
+      this.rain.gain.setTargetAtTime(paused ? 0.018 : terminal ? 0.028 : (intro ? 0.062 : 0.075) + motion * 0.028, now, 0.22);
       this.wind.gain.setTargetAtTime(paused || terminal ? 0.004 : windVolume * (focused ? 0.55 : 1) * (cue ? 0.55 : 1), now, cue ? 0.025 : 0.18);
       this.windFilter.frequency.setTargetAtTime(focused ? 240 : 260 + motion * 600 + landing * 360, now, 0.15);
       this.rainFilter.frequency.setTargetAtTime(focused ? 2300 : 6100 + motion * 1400 + landing * 500, now, 0.16);
-      const musicVolume = focused ? 0.6 : playing ? 0.42 - landing * 0.1 : 0.52;
+      const musicVolume = focused ? 0.6 : playing ? 0.42 - landing * 0.1 : intro ? 0.45 - introFlight * 0.03 : 0.52;
       this.music.gain.setTargetAtTime(paused || terminal ? 0 : musicVolume * (cue ? 0.58 : 1), now, cue ? 0.025 : 0.3);
     }
     if (this.muted || state.mode === 'paused' || state.mode === 'impact' || state.mode === 'caught') {
@@ -255,8 +258,12 @@ export class RainAudio {
       this.paramClock = 0;
     }
     if (name === 'start') {
-      this._hush(at, 0.55, 0.13, 900, 4500);
-      [62, 69, 74].forEach((note, index) => this._tone(hz(note), at + index * 0.075, 0.5, 0.06));
+      this._tone(hz(62), at, 0.7, 0.028, 'sine', this.effects, 0, 0, 0.3);
+      this._tone(hz(69), at + 0.1, 0.65, 0.02, 'sine', this.effects, 0, 0.12, 0.25);
+    } else if (name === 'takeoff') {
+      this.paramClock = 0;
+      this._hush(at, 0.48, 0.11, 650, 3700, 'highpass', 0.05);
+      this._tone(hz(74), at + 0.02, 0.42, 0.04, 'sine', this.effects, 0, 0, 0.14);
     } else if (name === 'dash') {
       this._hush(at, 0.28, 0.32, 500, 7000, 'highpass');
       this._tone(520, at, 0.24, 0.065, 'sine', this.effects, 180, this.pan, 0);

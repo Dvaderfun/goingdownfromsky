@@ -16,9 +16,12 @@ const ROWS = 13;
 const HAZARD_POOL = 24;
 const PICKUP_POOL = 28;
 const TAU = Math.PI * 2;
+const INTRO_DURATION = 3.2;
 const clamp = THREE.MathUtils.clamp;
 const smooth = (value) => value * value * (3 - 2 * value);
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
+const inIntro = (state) => state.mode === 'intro' || state.mode === 'paused' && state.resumeMode === 'intro';
+const introTime = (state) => clamp(finite(state.introTime, finite(state.introProgress) * INTRO_DURATION), 0, INTRO_DURATION);
 const random = (seed) => {
   const value = Math.sin(seed * 127.1 + 311.7) * 43758.5453123;
   return value - Math.floor(value);
@@ -62,6 +65,11 @@ export class RainScene {
     this.displayTime = 0;
     this.lastDistance = 0;
     this.landingX = 0;
+    this.introPose = {
+      active: false, time: 0, stage: 'complete', roofSurfaceY: -0.275, roofEdgeZ: 2.8,
+      feet: [new THREE.Vector3(), new THREE.Vector3()], grounded: false, playerPosition: new THREE.Vector3(),
+    };
+    this.introFootCorner = new THREE.Vector3();
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.65));
@@ -369,7 +377,14 @@ export class RainScene {
     }
     this.roof = new THREE.Group();
     this.scene.add(this.roof);
-    this.mesh(this.roof, 'box', sill, [0, 0, 0], [20.6, 0.65, 5.6]);
+    const roofSlab = this.mesh(this.roof, 'box', sill, [0, 0, 0], [20.6, 0.65, 5.6]);
+    roofSlab.receiveShadow = true;
+    // The bright front lip and paving joints make the departure edge legible
+    // from the opening's oblique camera, even on a narrow phone screen.
+    this.mesh(this.roof, 'box', this.material('roof-lip', { color: 0xac969b, roughness: 0.38, metalness: 0.27 }), [0, 0.345, 2.765], [20.6, 0.04, 0.07]);
+    const roofJoint = this.material('roof-paving-joint', { color: 0x5a4b60, roughness: 0.9 });
+    for (const x of [-8, -4, 4, 8]) this.mesh(this.roof, 'box', roofJoint, [x, 0.329, 1.13], [0.018, 0.007, 3.2]);
+    this.mesh(this.roof, 'box', roofJoint, [0, 0.329, 0.9], [20.2, 0.007, 0.018]);
     this.mesh(this.roof, 'box', edge, [0, 0.7, -0.3], [19.7, 0.75, 0.35]);
     this.mesh(this.roof, 'box', this.material('roof-tank', { color: 0x53495f }), [5.7, 2.1, -2], [3.1, 2.6, 2.5]);
     const aerial = this.mesh(this.roof, 'cylinder', pipe, [-6.6, 3, -1.6], [0.07, 5, 0.07]);
@@ -383,8 +398,8 @@ export class RainScene {
     const absoluteRow = Math.floor(distance / 10);
     const ground = 1.2 + (state.distance || 0) - (state.height || 100);
     const groundNear = state.mode !== 'menu' && ground > -42;
-    const launch = clamp(finite(state.launchProgress, 1), 0, 1);
-    const roofY = state.mode === 'menu' ? 9.7 : THREE.MathUtils.lerp(-0.6, 9.7, smooth(launch)) + finite(state.distance);
+    const transition = smooth(clamp((introTime(state) - 2.5) / 0.7, 0, 1));
+    const roofY = inIntro(state) ? THREE.MathUtils.lerp(-0.6, 9.7, transition) : state.mode === 'menu' ? 9.7 : 9.7 + finite(state.distance);
     const wallTop = Math.min(80, roofY - 0.3);
     for (const part of this.architecture) {
       const columns = part.floor ? 1 : COLUMNS.length;
@@ -429,8 +444,8 @@ export class RainScene {
       edge.scale.y = wallHeight;
     }
     for (const detail of this.facadeHardware) detail.visible = detail.position.y > wallBottom && detail.position.y < wallTop;
-    // The ledge begins under the boots, then travels upward as the camera
-    // follows the leap. Gameplay coordinates are unchanged after takeoff.
+    // The roof stays still through the standing, approach and jump shots.
+    // Only the final camera handover raises it into the flight coordinates.
     this.roof.position.y = roofY;
     this.roof.visible = this.roof.position.y < 35;
     this.city.position.y = state.mode === 'menu' ? 0 : Math.min(distance * 0.12, 26);
@@ -505,8 +520,9 @@ export class RainScene {
       this.mesh(leg, 'capsule', this.material('stockings', { color: 0x52506c }), [0, -0.25, -0.015], [0.21, 0.56, 0.18]);
       this.mesh(leg, 'capsule', boots, [0, -0.64, 0], [0.24, 0.5, 0.23]);
       this.mesh(leg, 'sphere', boots, [0.015, -0.85, 0.11], [0.145, 0.13, 0.25]);
-      this.mesh(leg, 'box', this.material('boot-soles', { color: 0x988195, roughness: 0.8 }), [0.01, -0.97, 0.11], [0.29, 0.052, 0.42]);
-      this.legs.push({ group: leg, side });
+      const sole = this.mesh(leg, 'box', this.material('boot-soles', { color: 0x988195, roughness: 0.8 }), [0.01, -0.97, 0.11], [0.29, 0.052, 0.42]);
+      sole.name = side < 0 ? 'player-left-sole' : 'player-right-sole';
+      this.legs.push({ group: leg, side, sole });
     }
     this.mesh(this.body, 'sphere', scarf, [0, 0.46, 0.05], [0.35, 0.12, 0.28]);
     this.scarf = new THREE.Group();
@@ -543,6 +559,11 @@ export class RainScene {
   }
 
   updatePlayer(state, dt) {
+    if (inIntro(state)) {
+      this.updateIntroPlayer(state);
+      return;
+    }
+    this.introPose.active = false;
     const t = this.displayTime;
     const menu = state.mode === 'menu';
     const x = Number.isFinite(state.x) ? state.x : 0;
@@ -555,8 +576,8 @@ export class RainScene {
     const near = clamp(finite(state.nearTimer) / 0.25, 0, 1);
     const cinematic = ['impact', 'result'].includes(state.mode) && state.outcome === 'win';
     const caught = state.mode === 'caught' || (state.mode === 'result' && state.outcome === 'caught');
-    const leapY = !menu && !cinematic && !caught ? Math.sin(launch * Math.PI) * (state.reducedMotion ? 0.2 : 0.72) : 0;
-    this.player.position.set(x, 1.2 + (menu ? Math.sin(t * 1.4) * 0.14 : leapY), 3);
+    this.player.position.set(x, 1.2 + (menu ? Math.sin(t * 1.4) * 0.14 : 0), 3);
+    this.player.rotation.x = this.player.rotation.y = 0;
     this.player.rotation.z = THREE.MathUtils.damp(this.player.rotation.z, clamp(-velocity * 0.022, -0.4, 0.4) + (menu ? -0.15 + Math.sin(t) * 0.035 : 0), 8, dt);
     this.body.rotation.x = menu ? -0.06 : -0.04 - Math.sin(launch * Math.PI) * 0.16;
     this.body.rotation.y = clamp(velocity * 0.009, -0.16, 0.16);
@@ -586,6 +607,8 @@ export class RainScene {
     this.player.scale.setScalar(scale * (menu ? 1.35 : 1));
     this.player.visible = scale > 0.02;
     this.shadow.position.set(x + 0.3, this.player.position.y - 0.3, 0.38);
+    this.shadow.rotation.set(0, 0, 0);
+    this.shadow.scale.set(3.2, 4, 1);
     this.shadow.visible = this.player.visible;
     this.playerLight.position.set(x - 0.8, this.player.position.y + 0.9, 5.4);
     this.playerLight.intensity = dash ? 7 : 3 + near * 3 + clamp(finite(state.pickupTimer) / 0.35, 0, 1) * 2;
@@ -612,6 +635,102 @@ export class RainScene {
       particle.rotation.z = clamp(-velocity * 0.018, -0.35, 0.35);
       particle.material.opacity = life * (particle.userData.dash ? 0.23 : 0.11);
     }
+  }
+
+  updateIntroPlayer(state) {
+    const t = introTime(state);
+    const approach = clamp((t - 0.8) / 0.9, 0, 1);
+    const jump = clamp((t - 1.7) / 0.8, 0, 1);
+    const airborne = smooth(clamp((jump - 0.14) / 0.86, 0, 1));
+    const transition = smooth(clamp((t - 2.5) / 0.7, 0, 1));
+    const grounded = t < 1.812;
+    const breath = state.reducedMotion ? 0 : Math.sin(t * 2.8) * 0.018;
+    const anticipation = t >= 1.7 && jump < 0.14 ? Math.sin(jump / 0.14 * Math.PI) : 0;
+    const stride = t < 1.7 ? Math.sin(approach * Math.PI * 2) * Math.sin(approach * Math.PI) : 0;
+    const arc = Math.sin(airborne * Math.PI);
+    const endFlight = smooth(clamp((jump - 0.75) / 0.25, 0, 1));
+    const z = t < 1.7 ? 1.5 + smooth(approach) * 0.95
+      : THREE.MathUtils.lerp(2.45 + airborne * 1.1, 3, transition);
+    const y = grounded ? 1.221 : THREE.MathUtils.lerp(1.221 + arc * 0.54 - airborne * 0.571, 1.2, transition);
+
+    this.player.position.set(0, y, z);
+    this.player.rotation.set(0, 0, 0);
+    this.player.scale.setScalar(1);
+    this.player.visible = true;
+    this.body.rotation.set(anticipation * 0.10 - airborne * 0.21 * (1 - transition), 0.18 * (1 - airborne), 0);
+    this.head.rotation.set(0.035 + smooth(approach) * 0.055 - airborne * 0.16, 0, breath);
+    for (const arm of this.arms) {
+      arm.group.rotation.z = arm.side * (0.12 + airborne * 1.54 + breath * 0.7);
+      arm.group.rotation.x = -stride * arm.side * 0.26 - anticipation * 0.32 - airborne * 0.22;
+    }
+    for (const leg of this.legs) {
+      leg.group.rotation.z = leg.side * airborne * (0.18 + endFlight * 0.12);
+      leg.group.rotation.x = stride * leg.side * 0.28 - anticipation * 0.28
+        + airborne * (leg.side < 0 ? -0.23 : 0.16) * (1 - transition);
+    }
+    this.ponytail.rotation.set(-airborne * 0.26, 0, -0.10 + breath * 2 - airborne * 0.18);
+    this.hem.rotation.z = breath * (0.4 + airborne);
+    this.hem.scale.x = 1 + airborne * 0.065;
+    for (let i = 0; i < this.scarfPieces.length; i++) {
+      const piece = this.scarfPieces[i];
+      piece.position.set(-0.08 - i * 0.055 + breath * i, THREE.MathUtils.lerp(-i * 0.16, 0.08 + i * 0.2, airborne), -0.03 * i - airborne * i * 0.035);
+      piece.rotation.z = THREE.MathUtils.lerp(-0.18, -0.35, airborne) + breath * i;
+    }
+
+    // Grounding comes from the actual boot geometry, including the approach
+    // stride and takeoff lean, rather than from a hand-tuned floating offset.
+    this.player.updateMatrixWorld(true);
+    if (grounded) {
+      let lowest = Infinity;
+      for (const leg of this.legs) {
+        for (const x of [-0.5, 0.5]) for (const z of [-0.5, 0.5]) {
+          this.introFootCorner.set(x, -0.5, z);
+          leg.sole.localToWorld(this.introFootCorner);
+          lowest = Math.min(lowest, this.introFootCorner.y);
+        }
+      }
+      this.player.position.y += this.roof.position.y + 0.325 - lowest;
+      this.player.updateMatrixWorld(true);
+    }
+    for (let i = 0; i < this.legs.length; i++) {
+      const leg = this.legs[i];
+      const foot = this.introPose.feet[i];
+      foot.set(0, -0.5, 0);
+      leg.sole.localToWorld(foot);
+    }
+    Object.assign(this.introPose, {
+      active: true, time: t,
+      stage: t < 0.8 ? 'roof' : t < 1.7 ? 'approach' : t < 2.5 ? 'jump' : t < INTRO_DURATION ? 'transition' : 'complete',
+      roofSurfaceY: this.roof.position.y + 0.325, roofEdgeZ: 2.8, grounded,
+    });
+    this.introPose.playerPosition.copy(this.player.position);
+    this.shadow.visible = grounded;
+    this.shadow.position.set(0, this.roof.position.y + 0.33, this.player.position.z + 0.08);
+    this.shadow.rotation.set(-Math.PI / 2, 0, 0);
+    this.shadow.scale.set(1.8, 1.05, 1);
+    this.playerLight.position.set(-1.2, this.player.position.y + 1.7, this.player.position.z + 2.6);
+    this.playerLight.intensity = 3.2;
+    this.trailClock = 0;
+    for (const particle of this.trail) {
+      particle.visible = false;
+      particle.userData.age = 1;
+    }
+  }
+
+  updateIntroCamera(state) {
+    const t = introTime(state);
+    const jump = smooth(clamp((t - 1.7) / 0.8, 0, 1));
+    const transition = smooth(clamp((t - 2.5) / 0.7, 0, 1));
+    // A three-quarter roof shot shows the front edge below the shoes and
+    // enough city beyond it to communicate height before the leap.
+    const viewHeight = Math.max(6.4, 4.1 / this.aspect);
+    const distance = viewHeight / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));
+    this.vectorB.set(0, THREE.MathUtils.lerp(0.95, 0.9, jump), THREE.MathUtils.lerp(1.78, 3.1, jump));
+    this.vector.set(-0.36 + jump * 0.09, 0.33 - jump * 0.05, 0.87).normalize().multiplyScalar(distance).add(this.vectorB);
+    this.camera.position.copy(this.vector).lerp(this.direction.set(0, 4.2, this.cameraZ), transition);
+    this.vectorB.lerp(this.direction.set(0, 1.2, 3), transition);
+    this.camera.lookAt(this.vectorB);
+    this.camera.updateMatrixWorld();
   }
 
   createHands() {
@@ -753,6 +872,10 @@ export class RainScene {
   }
 
   updateHands(state) {
+    if (inIntro(state)) {
+      for (const hand of this.hands) hand.group.visible = false;
+      return;
+    }
     const menu = state.mode === 'menu';
     const hazards = menu ? this.menuHands : state.hazards || [];
     const t = this.displayTime;
@@ -867,6 +990,10 @@ export class RainScene {
   }
 
   updatePickups(state) {
+    if (inIntro(state)) {
+      for (const pickup of this.pickups) pickup.group.visible = false;
+      return;
+    }
     const pickups = state.pickups || [];
     let slot = 0;
     for (const pickup of pickups) {
@@ -920,7 +1047,7 @@ export class RainScene {
   }
 
   updateRain(state, dt) {
-    const playing = state.mode === 'playing' || state.mode === 'paused';
+    const playing = state.mode === 'playing' || state.mode === 'paused' && state.resumeMode !== 'intro';
     const intensity = playing ? clamp(finite(state.fallIntensity, 0.45), 0, 1) : 0.2;
     const fallSpeed = Math.max(0, finite(state.fallSpeed, finite(state.speed, 12)));
     const speed = playing ? (0.7 + intensity * 1.2 + fallSpeed * 0.035) * (state.slow ? 0.38 : 1) : 1;
@@ -961,7 +1088,7 @@ export class RainScene {
   }
 
   updateFlightEffects(state, dt) {
-    const playing = state.mode === 'playing' || state.mode === 'paused';
+    const playing = state.mode === 'playing' || state.mode === 'paused' && state.resumeMode !== 'intro';
     const intensity = clamp(finite(state.fallIntensity, 0.45), 0, 1);
     const speed = Math.max(0, finite(state.fallSpeed, finite(state.speed, 12))) * (state.slow ? 0.38 : 1);
     this.speedStreakDistance = (this.speedStreakDistance + (speed + 16) * dt) % 70;
@@ -1321,23 +1448,24 @@ export class RainScene {
     }
     this.lastDistance = finite(state.distance);
     if (state.mode !== this.mode) {
-      if (this.mode === 'menu' && state.mode === 'playing') this.cameraOffset = 0;
+      if (this.mode === 'menu' && ['playing', 'intro'].includes(state.mode)) this.cameraOffset = 0;
       this.mode = state.mode;
       this.modeTime = 0;
       if (state.mode === 'impact') this.landingX = state.x || 0;
-    } else this.modeTime += dt;
+    } else if (state.mode !== 'paused') this.modeTime += dt;
     const paused = state.mode === 'paused';
     const motionDt = paused ? 0 : dt * (state.reducedMotion ? 0.3 : 1);
     this.displayTime += motionDt;
     const menu = state.mode === 'menu';
     const menuOffset = this.aspect > 1.05 ? -8.8 : -1.1;
-    this.cameraOffset = THREE.MathUtils.damp(this.cameraOffset, menu ? menuOffset : 0, state.reducedMotion ? 20 : 5.2, dt);
+    this.cameraOffset = inIntro(state) ? 0 : THREE.MathUtils.damp(this.cameraOffset, menu ? menuOffset : 0, state.reducedMotion ? 20 : 5.2, paused ? 0 : dt);
     const shake = state.reducedMotion ? 0 : (state.shake || 0) * 0.08;
     this.camera.position.set(this.cameraOffset + Math.sin(this.displayTime * 59) * shake, 4.2 + Math.cos(this.displayTime * 63) * shake, this.cameraZ);
     this.camera.lookAt(this.cameraOffset, 1.2, 3);
     this.camera.updateMatrixWorld();
     const ground = this.updateBuilding(state);
     this.updatePlayer(state, motionDt);
+    if (inIntro(state)) this.updateIntroCamera(state);
     this.updateHands(state);
     this.updatePickups(state);
     this.updateRain(state, motionDt);

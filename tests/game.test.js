@@ -1,10 +1,179 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RainGame, LANES, PLAYER_Y, HUNTER_REACH, gradeRun, levelConfig, generateLevel, parseSave } from '../src/game.js';
+import { RainGame, LANES, PLAYER_Y, HUNTER_REACH, INTRO_DURATION, gradeRun, levelConfig, generateLevel, parseSave } from '../src/game.js';
 
 const step = (game, seconds) => {
   for (let i = 0; i < Math.ceil(seconds / 0.02); i++) game.update(0.02);
 };
+
+const attemptProgress = game => {
+  const { distance, elapsed, score, focus, dashTimer, dashCooldown, x, velocity, combo, drops, nearMisses } = game.state;
+  return { distance, elapsed, score, focus, dashTimer, dashCooldown, x, velocity, combo, drops, nearMisses };
+};
+
+test('start opens a real rooftop intro and leaves the attempt clock untouched', () => {
+  const game = new RainGame();
+  game.start(1, 7);
+  assert.equal(game.state.mode, 'intro');
+  assert.equal(game.state.introTime, 0);
+  assert.equal(game.state.introProgress, 0);
+  assert.equal(game.state.introStage, 'roof');
+  assert.equal(game.state.launchProgress, 0);
+  const before = attemptProgress(game);
+  const hazards = structuredClone(game.state.hazards);
+  const pickups = structuredClone(game.state.pickups);
+  step(game, 1.5);
+  assert.equal(game.state.mode, 'intro');
+  assert.equal(game.state.introStage, 'approach');
+  assert.deepEqual(attemptProgress(game), before);
+  assert.deepEqual(game.state.hazards, hazards);
+  assert.deepEqual(game.state.pickups, pickups);
+});
+
+test('intro blocks movement, pointer, dash and focus without carrying held inputs into flight', () => {
+  const events = [];
+  const game = new RainGame({ onEvent: name => events.push(name) });
+  game.start(1, 7);
+  game.move(1);
+  game.point(-6);
+  game.slow(true);
+  assert.equal(game.dash(), false);
+  const before = attemptProgress(game);
+  step(game, 0.5);
+  assert.deepEqual(attemptProgress(game), before);
+  assert.equal(game.axis, 0);
+  assert.equal(game.targetX, null);
+  assert.equal(game.slowHeld, false);
+  assert.equal(game.state.slow, false);
+  assert.equal(events.includes('dash'), false);
+  game.skipIntro();
+  game.state.hazards = [];
+  game.state.pickups = [];
+  game.update(0.02);
+  assert.equal(game.state.x, 0);
+  assert.equal(game.state.slow, false);
+});
+
+test('intro stages progress in order and takeoff fires once before natural gameplay', () => {
+  const events = [];
+  const game = new RainGame({ onEvent: name => events.push(name) });
+  game.start(1, 7);
+  const stages = [game.state.introStage];
+  while (game.state.introTime < INTRO_DURATION - 0.04) {
+    game.update(0.02);
+    if (stages.at(-1) !== game.state.introStage) stages.push(game.state.introStage);
+    assert.equal(game.state.distance, 0);
+    assert.equal(game.state.elapsed, 0);
+    assert.equal(game.state.score, 0);
+    assert.equal(game.state.launchProgress, game.state.introProgress);
+  }
+  assert.deepEqual(stages, ['roof', 'approach', 'jump', 'transition']);
+  assert.equal(events.filter(name => name === 'takeoff').length, 1);
+  game.update(0.05);
+  assert.equal(game.state.mode, 'playing');
+  assert.equal(game.state.introTime, INTRO_DURATION);
+  assert.equal(game.state.introProgress, 1);
+  assert.equal(game.state.introStage, 'complete');
+  assert.equal(game.state.launchProgress, 1);
+  assert.equal(game.state.distance, 0);
+  assert.equal(game.state.elapsed, 0);
+  game.state.hazards = [];
+  game.state.pickups = [];
+  step(game, 0.2);
+  assert.ok(game.state.distance > 0);
+  assert.ok(game.state.elapsed > 0);
+  assert.equal(game.state.launchProgress, 1);
+  assert.equal(events.filter(name => name === 'takeoff').length, 1);
+});
+
+test('skip works from every intro stage, starts clean and cannot replay takeoff', () => {
+  for (const time of [0, 1, 1.9, 2.8]) {
+    const events = [];
+    const game = new RainGame({ onEvent: name => events.push(name) });
+    game.start(1, 7);
+    step(game, time);
+    assert.equal(game.skipIntro(), true);
+    assert.equal(game.state.mode, 'playing');
+    assert.equal(game.state.introTime, INTRO_DURATION);
+    assert.equal(game.state.introProgress, 1);
+    assert.equal(game.state.introStage, 'complete');
+    assert.equal(game.state.launchProgress, 1);
+    assert.equal(game.state.distance, 0);
+    assert.equal(game.state.elapsed, 0);
+    assert.equal(game.state.score, 0);
+    assert.equal(game.skipIntro(), false);
+    assert.equal(events.filter(name => name === 'takeoff').length, 1);
+  }
+});
+
+test('pause and resume preserve the intro frame and resume mode', () => {
+  const game = new RainGame();
+  game.start(1, 7);
+  step(game, 1);
+  game.pause();
+  assert.equal(game.state.mode, 'paused');
+  assert.equal(game.state.resumeMode, 'intro');
+  const before = structuredClone(game.state);
+  step(game, 1);
+  assert.equal(game.state.introTime, before.introTime);
+  assert.equal(game.state.introProgress, before.introProgress);
+  assert.equal(game.state.introStage, before.introStage);
+  assert.deepEqual(attemptProgress(game), attemptProgress({ state: before }));
+  assert.equal(game.skipIntro(), false);
+  game.resume();
+  assert.equal(game.state.mode, 'intro');
+  game.update(0.02);
+  assert.ok(game.state.introTime > before.introTime);
+  game.skipIntro();
+  game.pause();
+  assert.equal(game.state.resumeMode, 'playing');
+  game.resume();
+  assert.equal(game.state.mode, 'playing');
+});
+
+test('menu and retry reset intro while keeping the saved landing style and snapshot', () => {
+  const game = new RainGame({ saved: { impactMode: 'hard' } });
+  game.start(2, 7);
+  step(game, 1.9);
+  const snapshot = JSON.parse(JSON.stringify(game.state));
+  assert.equal(snapshot.mode, 'intro');
+  assert.equal(snapshot.introStage, 'jump');
+  assert.equal(snapshot.runImpactMode, 'hard');
+  assert.equal(snapshot.outcome, null);
+  assert.equal(game.setImpactMode('arcade'), false);
+  game.pause();
+  game.menu();
+  assert.equal(game.state.mode, 'menu');
+  assert.equal(game.state.outcome, null);
+  assert.equal(game.state.distance, 0);
+  game.start(2, 8);
+  assert.equal(game.state.mode, 'intro');
+  assert.equal(game.state.introStage, 'roof');
+  assert.equal(game.state.introTime, 0);
+  assert.equal(game.state.introProgress, 0);
+  assert.equal(game.state.runImpactMode, 'hard');
+  game.skipIntro();
+  game.finish('caught');
+  step(game, 1);
+  game.start(2, 8);
+  assert.equal(game.state.mode, 'intro');
+  assert.equal(game.state.outcome, null);
+  assert.equal(game.state.introStage, 'roof');
+});
+
+test('explicit gameplay fixtures skip intro and frame hitches cannot skip the whole cutscene', () => {
+  const game = new RainGame();
+  game.start(1, 7, { skipIntro: true });
+  assert.equal(game.state.mode, 'playing');
+  assert.equal(game.state.introStage, 'complete');
+  assert.equal(game.state.launchProgress, 1);
+  game.start(1, 7);
+  game.update(20);
+  assert.equal(game.state.mode, 'intro');
+  assert.equal(game.state.introStage, 'roof');
+  assert.ok(game.state.introTime <= 0.05);
+  assert.equal(game.state.distance, 0);
+});
 
 test('height, speed and obstacle density increase, movement corridor stays reachable', () => {
   assert.ok(levelConfig(2).height > levelConfig(1).height);
@@ -36,7 +205,7 @@ test('level generation is deterministic for retryable test layouts', () => {
 function collisionFixture() {
   const events = [];
   const game = new RainGame({ onEvent: e => events.push(e) });
-  game.start(1, 7);
+  game.start(1, 7, { skipIntro: true });
   game.state.hazards = [{ id: 'test', at: 1, baseX: 0, x: 0, y: PLAYER_Y - 1, type: 'grab', phase: 0, warning: 1, active: true, passed: false }];
   game.state.pickups = [];
   return { game, events };
@@ -50,7 +219,7 @@ test('catch is a loss, settles into result and retry fully resets transient stat
   assert.ok(events.includes('catch'));
   step(game, 1);
   assert.equal(game.state.mode, 'result');
-  game.start(1, 2);
+  game.start(1, 2, { skipIntro: true });
   assert.equal(game.state.outcome, null);
   assert.equal(game.state.elapsed, 0);
   assert.equal(game.state.dashTimer, 0);
@@ -72,7 +241,7 @@ test('dash protects through hand, cannot be spammed, and stays within facade', (
 
 test('pause freezes gameplay and clears held slow and movement', () => {
   const game = new RainGame();
-  game.start(1, 8);
+  game.start(1, 8, { skipIntro: true });
   game.slow(true);
   game.move(1);
   step(game, 0.1);
@@ -89,7 +258,7 @@ test('pause freezes gameplay and clears held slow and movement', () => {
 test('slow reduces fall distance while retaining responsive horizontal control', () => {
   const a = new RainGame();
   const b = new RainGame();
-  a.start(1, 8); b.start(1, 8);
+  a.start(1, 8, { skipIntro: true }); b.start(1, 8, { skipIntro: true });
   a.move(1); b.move(1); b.slow(true);
   step(a, 0.5); step(b, 0.5);
   assert.ok(b.state.distance < a.state.distance * 0.5);
@@ -112,7 +281,7 @@ test('near miss awards combo/focus once; drops are collected only once', () => {
 
 test('landing completes level, awards bonus, saves record and unlocks next tower', () => {
   const game = new RainGame();
-  game.start(2, 1);
+  game.start(2, 1, { skipIntro: true });
   game.state.hazards = [];
   game.state.pickups = [];
   game.state.distance = game.state.height - 0.1;
@@ -168,7 +337,7 @@ test('sweep cannot catch after the player has left its vertical interval', () =>
 
 test('exhausted focus stays off while held and can reactivate after release', () => {
   const game = new RainGame();
-  game.start(1, 7);
+  game.start(1, 7, { skipIntro: true });
   game.state.hazards = [];
   game.state.pickups = [];
   game.state.focus = 0.026;
@@ -203,7 +372,7 @@ test('first tower teaches with authored waves, two hunters and optional risk rou
 function hunterFixture() {
   const events = [];
   const game = new RainGame({ onEvent: event => events.push(event) });
-  game.start(2, 3);
+  game.start(2, 3, { skipIntro: true });
   game.state.pickups = [];
   game.state.distance = 18;
   game.state.x = 6;
@@ -239,17 +408,17 @@ test('pause freezes tracking and visual feedback timers; retry clears all new st
   const before = [hunter.x, game.state.nearTimer, game.state.pickupTimer, game.state.launchProgress];
   step(game, 1);
   assert.deepEqual([hunter.x, game.state.nearTimer, game.state.pickupTimer, game.state.launchProgress], before);
-  game.start(1, 3);
+  game.start(1, 3, { skipIntro: true });
   assert.equal(game.state.riskDrops, 0);
   assert.equal(game.state.nearTimer, 0);
   assert.equal(game.state.pickupTimer, 0);
-  assert.equal(game.state.launchProgress, 0);
+  assert.equal(game.state.launchProgress, 1);
   assert.ok(game.state.hazards.every(h => !h.locked));
 });
 
 test('risk drop awards its combo, score and focus once', () => {
   const game = new RainGame();
-  game.start(1, 1);
+  game.start(1, 1, { skipIntro: true });
   game.state.hazards = [];
   game.state.focus = 0.1;
   game.state.pickups = [{ id: 'risk-test', at: 1, x: 0, y: 0.2, risk: true, collected: false, passed: false }];
@@ -265,7 +434,7 @@ test('risk drop awards its combo, score and focus once', () => {
 
 test('dash collects a narrow risk drop crossed between two rendered frames', () => {
   const game = new RainGame();
-  game.start(1, 1);
+  game.start(1, 1, { skipIntro: true });
   game.state.hazards = [];
   game.state.x = -0.55;
   game.state.pickups = [{ id: 'swept-risk', at: 1, x: 0, y: 0.2, risk: true, collected: false, passed: false }];
@@ -291,24 +460,24 @@ test('legacy saves remain valid and malformed per-tower records are filtered', (
 test('tower record keeps best score and grade independently, and is saved before event', () => {
   let savedRecord;
   const game = new RainGame({ saved: { levelRecords: { '1': { score: 10000, grade: 'C' } } }, onEvent: name => { if (name === 'save') savedRecord = structuredClone(game.state.levelRecords['1']); } });
-  game.start(1, 1);
+  game.start(1, 1, { skipIntro: true });
   Object.assign(game.state, { nearMisses: 12, riskDrops: 4, drops: 4, bestCombo: 9 });
   game.finish('win');
   assert.equal(game.state.lastResult.grade, 'S');
   assert.equal(game.state.lastResult.newLevelBest, false);
   assert.deepEqual(savedRecord, { score: 10000, grade: 'S' });
-  game.start(1, 1);
+  game.start(1, 1, { skipIntro: true });
   game.finish('caught');
   assert.equal(game.state.lastResult.grade, null);
   assert.deepEqual(game.state.levelRecords['1'], { score: 10000, grade: 'S' });
 });
 
-test('launch and fall intensity ramp smoothly while frame hitch protection remains', () => {
+test('flight acceleration and intensity ramp without replaying the completed intro', () => {
   const game = new RainGame();
-  game.start(1, 1);
+  game.start(1, 1, { skipIntro: true });
   game.state.hazards = [];
   game.state.pickups = [];
-  assert.equal(game.state.launchProgress, 0);
+  assert.equal(game.state.launchProgress, 1);
   assert.ok(game.state.fallSpeed < game.state.speed);
   step(game, 2);
   assert.equal(game.state.launchProgress, 1);
@@ -334,19 +503,19 @@ test('mode selection is saved in menu and locked for the current attempt', () =>
   const game = new RainGame({ onEvent: name => events.push(name) });
   assert.equal(game.setImpactMode('hard'), true);
   assert.ok(events.includes('save'));
-  game.start(1, 1);
+  game.start(1, 1, { skipIntro: true });
   assert.equal(game.state.runImpactMode, 'hard');
   assert.equal(game.setImpactMode('arcade'), false);
   assert.equal(game.state.runImpactMode, 'hard');
   game.menu();
   assert.equal(game.setImpactMode('arcade'), true);
-  game.start(1, 1);
+  game.start(1, 1, { skipIntro: true });
   assert.equal(game.state.runImpactMode, 'arcade');
 });
 
 test('hard landing allows the physics cinematic, while arcade keeps its old timing', () => {
   const hard = new RainGame({ saved: { impactMode: 'hard' } });
-  hard.start(1, 1);
+  hard.start(1, 1, { skipIntro: true });
   hard.finish('win');
   step(hard, 1.5);
   assert.equal(hard.state.mode, 'impact');
@@ -354,7 +523,7 @@ test('hard landing allows the physics cinematic, while arcade keeps its old timi
   step(hard, 2.2);
   assert.equal(hard.state.mode, 'result');
   const arcade = new RainGame();
-  arcade.start(1, 1);
+  arcade.start(1, 1, { skipIntro: true });
   arcade.finish('win');
   step(arcade, 1.4);
   assert.equal(arcade.state.mode, 'result');
@@ -363,12 +532,12 @@ test('hard landing allows the physics cinematic, while arcade keeps its old timi
 
 test('catch timing and replay preserve the selected style without running a landing', () => {
   const game = new RainGame({ saved: { impactMode: 'hard' } });
-  game.start(1, 1);
+  game.start(1, 1, { skipIntro: true });
   game.finish('caught');
   step(game, 1);
   assert.equal(game.state.mode, 'result');
   assert.equal(game.state.outcome, 'caught');
-  game.start(1, 2);
+  game.start(1, 2, { skipIntro: true });
   assert.equal(game.state.impactMode, 'hard');
   assert.equal(game.state.runImpactMode, 'hard');
   assert.equal(game.state.outcome, null);
@@ -378,7 +547,7 @@ test('reserved lanes remain traversable through hunters at every difficulty tier
   for (const level of [1, 3, 5, 10, 20]) {
     for (let seed = 0; seed < 20; seed++) {
       const game = new RainGame();
-      game.start(level, seed);
+      game.start(level, seed, { skipIntro: true });
       let iterations = 0;
       while (game.state.mode === 'playing' && iterations++ < 15000) {
         const wave = game.waves.find(w => w.at > game.state.distance - 0.85);

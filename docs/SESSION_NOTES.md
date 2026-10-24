@@ -1,5 +1,20 @@
 # Сесії — 23–24.10.2026
 
+## Ітерація 05 — стартова катсцена, версія 0.4.0
+
+Кожен звичайний старт тепер показує 3,2-секундну сцену: героїня стоїть на даху, підходить до краю, стрибає й переходить у звичайне кадрування польоту. Етапи — roof (0–0,8 с), approach (0,8–1,7), jump (1,7–2,5), transition (2,5–3,2). Симуляція починає відлік лише після вступу; пропуск кнопкою, Space/Enter чи touch одразу встановлює ту саму початкову позицію. Intro пауза зберігає режим, час і кадр камери. У режимі тестових fixtures лишилась опція `skipIntro:true`.
+
+Приземлення, hard/arcade selection, небезпечна людина з парою рук, hunter/risk/scoring та архів 0.2.1 збережені. Архів стартує відразу в `playing` і не має вступної сцени.
+
+Фактичні перевірки на 24.10.2026:
+
+- `npm test`: **40/40**.
+- `npm run build`: пройшов.
+- `npm run test:pages`: пройшов локально під `/goingdownfromsky/`, включно з новим intro/UI/skip/keyboard/touch/mobile і запуском незміненого архіву.
+- Серійний повний browser сценарій із `--skip-render`: пройшов природний вступ і заморожені inputs/дистанцію, паузу на точному кадрі, Enter/Space/touch skip, arcade win із risk/hunter/grade, caught/retry, hard win із фізикою, налаштування/mobile та негайний старт архіву. Перший конкурентний запуск упав під навантаженням GPU; серійний повтор пройшов без змін продуктового коду.
+- Фінальний строгий render suite: 178/178 пройшли (154 попередні +24 intro), errors=[], failures=[]. Перевірено опору ніг/край даху, незмінну позу й камеру в паузі, skip, звичайні/жорсткі фінали, DPR/resize та ресурси. Чотири старі очікування декоративного roof-hop оновлено під intro, після цього строгий повтор успішний.
+- Новий Pages build ще не опублікований; live URL перевірити після успішного CI/Pages deploy.
+
 ## GitHub Pages — 24.10.2026
 
 Створено Git-репозиторій і опубліковано https://github.com/Dvaderfun/goingdownfromsky. Pages URL — https://dvaderfun.github.io/goingdownfromsky/; archive — `/goingdownfromsky/releases/arcade-0.2.1/`. Official Actions workflow виконує Node-тести/build/deploy після push у main. Перший run 40090669930 має success для обох jobs.
@@ -123,3 +138,4 @@ node scripts/inspect-render.mjs
 - Mobile: `artifacts/mobile-menu.png`, `mobile-game.png`, `mobile-pause.png`.
 
 Артефакти генеруються локально й виключені з Git. Наступні кроки та вступ до нової сесії — у [NEXT_SESSION.md](NEXT_SESSION.md).
+

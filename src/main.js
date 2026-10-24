@@ -82,6 +82,7 @@ ui = new GameUI(document.querySelector('#ui'), {
   mute: toggleMute,
   motion: () => { game.state.reducedMotion = !game.state.reducedMotion; save(); },
   impactMode: mode => game.setImpactMode(mode),
+  skipIntro: () => { clearInput(); document.activeElement?.blur?.(); game.skipIntro(); },
   dash: () => game.dash(),
   slow: held => game.slow(held),
   move: axis => game.move(axis),
@@ -109,12 +110,20 @@ addEventListener('keydown', event => {
   if (event.code === 'Escape' || event.code === 'KeyP') {
     if (!event.repeat) {
       clearInput();
-      if (game.state.mode === 'playing') game.pause();
+      if (['playing', 'intro'].includes(game.state.mode)) game.pause();
       else if (game.state.mode === 'paused') game.resume();
     }
     return;
   }
   if (event.code === 'KeyM' && !event.repeat) { toggleMute(); return; }
+  if (game.state.mode === 'intro') {
+    if (['Space', 'Enter'].includes(event.code) && !event.repeat) {
+      event.preventDefault();
+      clearInput();
+      game.skipIntro();
+    }
+    return;
+  }
   if (game.state.mode !== 'playing') return;
   if (event.code === 'Space' && !event.repeat) game.dash();
   keys.add(event.code);
@@ -195,6 +204,18 @@ Object.defineProperty(window, '__RAIN_PAIN__', {
       bodyCount: renderer.ragdoll.parts.length,
       stainCount: renderer.hardLanding.stains.filter(stain => stain.visible).length,
       visible: renderer.hardLanding.group.visible,
+    } : null,
+    intro: () => renderer ? {
+      active: renderer.introPose.active,
+      stage: game.state.introStage,
+      time: game.state.introTime,
+      playerPosition: renderer.player.position.toArray(),
+      cameraPosition: renderer.camera.position.toArray(),
+      cameraQuaternion: renderer.camera.quaternion.toArray(),
+      roofSurfaceY: renderer.introPose.roofSurfaceY,
+      roofEdgeZ: renderer.introPose.roofEdgeZ,
+      grounded: renderer.introPose.active && renderer.introPose.grounded,
+      feet: renderer.introPose.feet.map(foot => foot.toArray()),
     } : null,
   }),
 });

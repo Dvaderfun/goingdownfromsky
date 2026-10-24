@@ -72,6 +72,11 @@ export class GameUI {
         <div class="menu-location"><span class="location-cross" aria-hidden="true">+</span><span>KYIV, UA<br><span class="location-muted">00:17 / RAIN EXPECTED</span></span></div>
       </section>
 
+      <section class="intro-screen" data-ref="introScreen" aria-label="Стартова сцена на даху" hidden>
+        <div class="intro-caption"><p class="intro-eyebrow">ВЕЖА <span data-ref="introLevel">01</span> · ДАХ</p><h2 data-ref="introName">Тихий район</h2><p>Місто ще спить. Дощ уже почався.</p></div>
+        <button class="intro-skip" data-action="skipIntro" data-ref="skipIntroButton" aria-label="Пропустити стартову сцену — пробіл"><span>Пропустити</span><kbd>SPACE</kbd><span class="intro-skip-arrow" aria-hidden="true">↘</span></button>
+      </section>
+
       <section class="game-hud" data-ref="hud" aria-label="Стан гри" hidden>
         <div class="hud-readout">
           <div class="level-readout"><span class="micro-label">РІВЕНЬ <span data-ref="levelNumber">01</span></span><strong data-ref="levelName">Тихий район</strong></div>
@@ -229,18 +234,23 @@ export class GameUI {
     }
   }
 
-  setMode(mode) {
-    if (this.mode === mode) return;
+  setMode(mode, resumeMode) {
+    if (this.mode === mode && this.resumeMode === resumeMode) return;
     const previous = this.mode;
     this.mode = mode;
+    this.resumeMode = resumeMode;
+    const sceneMode = mode === "paused" ? resumeMode || "playing" : mode;
     this.root.dataset.mode = mode;
+    this.root.dataset.sceneMode = sceneMode;
     this.refs.menuScreen.hidden = mode !== "menu";
+    this.refs.introScreen.hidden = sceneMode !== "intro";
+    this.refs.skipIntroButton.disabled = mode !== "intro";
     this.refs.hud.hidden = !["playing", "paused", "caught", "impact"].includes(
       mode,
-    );
+    ) || sceneMode === "intro";
     this.refs.pauseScreen.hidden = mode !== "paused";
     this.refs.resultScreen.hidden = mode !== "result";
-    this.refs.pauseButton.hidden = mode !== "playing";
+    this.refs.pauseButton.hidden = mode !== "playing" && mode !== "intro";
     this.root.classList.toggle(
       "cinematic",
       mode === "caught" || mode === "impact",
@@ -270,6 +280,11 @@ export class GameUI {
           ?.focus({ preventScroll: true });
       } else if (previous === "paused") {
         this.focusReturn?.focus?.({ preventScroll: true });
+      } else if (mode === "intro") {
+        requestAnimationFrame(() => {
+          if (this.mode === "intro")
+            this.refs.skipIntroButton.focus({ preventScroll: true });
+        });
       } else if (mode === "playing") {
         document.activeElement?.blur?.();
       }
@@ -311,6 +326,8 @@ export class GameUI {
     this.updateMenu(state);
     this.text("levelNumber", levelNumber);
     this.text("levelName", state.levelName || "Чужі вікна");
+    this.text("introLevel", levelNumber);
+    this.text("introName", state.levelName || "Чужі вікна");
     this.text(
       "remainingFloors",
       Math.max(0, Math.ceil((state.floors || 0) * (1 - progress))),
@@ -373,7 +390,7 @@ export class GameUI {
     this.lastNearMisses = state.nearMisses || 0;
 
     if (mode === "result") this.updateResult(state);
-    this.setMode(mode);
+    this.setMode(mode, state.resumeMode);
   }
 
   updateMenu(state) {

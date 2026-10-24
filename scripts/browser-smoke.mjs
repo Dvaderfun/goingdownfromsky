@@ -95,7 +95,7 @@ try {
     }
   }
   browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--enable-unsafe-swiftshader'] });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, hasTouch: true });
   page = await context.newPage();
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', e => { if (e.type() === 'error') errors.push(e.text()); });
@@ -111,7 +111,48 @@ try {
   assert.equal((await snapshot()).muted, true);
   await action('start');
   await page.waitForTimeout(150);
-  assert.equal((await snapshot()).mode, 'playing');
+  snapshots.introRoof = await snapshot();
+  assert.equal(snapshots.introRoof.mode, 'intro');
+  assert.equal(snapshots.introRoof.introStage, 'roof');
+  assert.equal(snapshots.introRoof.distance, 0);
+  assert.equal(snapshots.introRoof.elapsed, 0);
+  assert.equal(snapshots.introRoof.score, 0);
+  assert.equal(await page.locator('[data-ref="introScreen"]').isVisible(), true);
+  assert.equal(await page.locator('[data-ref="hud"]').isVisible(), false);
+  assert.equal(await page.evaluate(() => window.__RAIN_PAIN__.landing().active), false);
+  for (const name of ['skipIntro', 'pause']) {
+    const bounds = await page.locator(`[data-action="${name}"]:visible`).first().boundingBox();
+    assert.ok(bounds.width >= 44 && bounds.height >= 44, `${name}: intro target is large enough for touch`);
+  }
+  await page.keyboard.down('ArrowRight');
+  await page.keyboard.down('Shift');
+  await page.keyboard.press('Escape');
+  await page.keyboard.up('ArrowRight');
+  await page.keyboard.up('Shift');
+  snapshots.introPaused = await snapshot();
+  assert.equal(snapshots.introPaused.mode, 'paused');
+  assert.equal(snapshots.introPaused.resumeMode, 'intro');
+  assert.equal(snapshots.introPaused.x, 0);
+  assert.equal(snapshots.introPaused.slow, false);
+  await page.waitForTimeout(80);
+  const pausedIntroPose = await page.evaluate(() => window.__RAIN_PAIN__.intro());
+  await page.waitForTimeout(180);
+  assert.equal((await snapshot()).introTime, snapshots.introPaused.introTime);
+  const stillIntroPose = await page.evaluate(() => window.__RAIN_PAIN__.intro());
+  assert.deepEqual(stillIntroPose.cameraPosition, pausedIntroPose.cameraPosition, 'Paused intro camera does not advance');
+  assert.deepEqual(stillIntroPose.playerPosition, pausedIntroPose.playerPosition, 'Paused intro heroine stays on the same frame');
+  assert.equal(await page.locator('[data-action="skipIntro"]').isDisabled(), true);
+  await page.screenshot({ path: path.join(output, 'desktop-intro-roof.png') });
+  await action('resume');
+  assert.equal((await snapshot()).mode, 'intro');
+  await page.waitForFunction(() => window.__RAIN_PAIN__.snapshot().introStage === 'jump', null, { timeout: 10000 });
+  snapshots.introJump = await snapshot();
+  assert.equal(snapshots.introJump.distance, 0);
+  assert.equal(snapshots.introJump.elapsed, 0);
+  await page.screenshot({ path: path.join(output, 'desktop-intro-jump.png') });
+  await page.waitForFunction(() => window.__RAIN_PAIN__.snapshot().mode === 'playing', null, { timeout: 10000 });
+  assert.equal((await snapshot()).launchProgress, 1, 'Natural intro completion does not replay a second launch');
+  assert.equal(await page.locator('[data-ref="introScreen"]').isVisible(), false);
   await page.keyboard.down('ArrowRight');
   await page.waitForFunction(() => window.__RAIN_PAIN__.snapshot().x > 0.3);
   await page.keyboard.up('ArrowRight');
@@ -146,6 +187,10 @@ try {
   await page.screenshot({ path: path.join(output, 'desktop-win.png') });
   await action('next');
   assert.equal((await snapshot()).level, 2);
+  assert.equal((await snapshot()).mode, 'intro');
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press('Enter');
+  assert.equal((await snapshot()).mode, 'playing', 'Enter skips the next tower opening');
   snapshots.caught = await steerUntilResult('caught');
   assert.equal(snapshots.caught.outcome, 'caught');
   await page.waitForTimeout(500);
@@ -153,6 +198,11 @@ try {
   await action('retry');
   assert.equal((await snapshot()).level, 2);
   assert.equal((await snapshot()).outcome, null);
+  assert.equal((await snapshot()).mode, 'intro');
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press('Space');
+  assert.equal((await snapshot()).mode, 'playing', 'Space skips a fresh retry without consuming dash');
+  assert.equal((await snapshot()).dashCooldown, 0);
   await page.reload();
   await page.waitForFunction(() => window.__RAIN_PAIN__);
   assert.equal((await snapshot()).unlockedLevel, 2, 'Progress survives reload');
@@ -168,6 +218,10 @@ try {
   assert.equal(await page.locator('[data-action="modeHard"]').getAttribute('aria-pressed'), 'true');
   await action('prevLevel');
   await action('start');
+  assert.equal((await snapshot()).mode, 'intro');
+  assert.equal((await snapshot()).runImpactMode, 'hard');
+  assert.equal(await page.evaluate(() => window.__RAIN_PAIN__.landing().active), false, 'Hard mode intro does not start landing physics');
+  await action('skipIntro');
   snapshots.hardWin = await steerUntilResult('win', true);
   assert.equal(snapshots.hardWin.outcome, 'win');
   assert.equal(snapshots.hardWin.lastResult.runImpactMode, 'hard');
@@ -195,6 +249,15 @@ try {
   await action('start');
   await page.waitForTimeout(250);
   assert.equal((await snapshot()).level, 1, 'Unlocked tower selector supports replay');
+  assert.equal((await snapshot()).mode, 'intro');
+  assert.equal(await page.locator('[data-ref="hud"]').isVisible(), false);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Intro has no mobile horizontal overflow');
+  const skip = await page.locator('[data-action="skipIntro"]:visible').boundingBox();
+  assert.ok(skip.width >= 44 && skip.height >= 44, 'Mobile intro skip remains a comfortable touch target');
+  await page.screenshot({ path: path.join(output, 'mobile-intro-roof.png') });
+  await page.touchscreen.tap(skip.x + skip.width / 2, skip.y + skip.height / 2);
+  await page.waitForFunction(() => window.__RAIN_PAIN__.snapshot().mode === 'playing');
+  assert.equal((await snapshot()).dashCooldown, 0, 'Touch skip does not trigger a dash');
   const beforeTouch = (await snapshot()).x;
   const right = await page.locator('[data-action="right"]:visible').boundingBox();
   await page.mouse.move(right.x + right.width / 2, right.y + right.height / 2);
@@ -222,7 +285,7 @@ try {
   await archivePage.close();
   assert.deepEqual(errors, [], 'No runtime or console errors');
   await writeFile(path.join(output, 'browser-report.json'), JSON.stringify({ passed: true, errors, snapshots }, null, 2));
-  console.log('Browser checks passed: arcade and hard landings, mode preference, archived release, keyboard, pause, abilities, win/catch/retry, saved progress, mobile layout and held touch controls. Screenshots: artifacts/');
+  console.log('Browser checks passed: natural rooftop intro, frozen intro inputs and camera, pause/resume, keyboard and touch skips, arcade and hard landings, mode preference, archived release, keyboard, abilities, win/catch/retry, saved progress, mobile layout and held touch controls. Screenshots: artifacts/');
 } catch (error) {
   if (page) {
     try {
