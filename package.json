@@ -1,0 +1,27 @@
+{
+  "name": "rain-pain",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node --test tests/*.test.js",
+    "test:browser": "node scripts/browser-smoke.mjs",
+    "test:render": "node scripts/render-regression.mjs",
+    "test:pages": "node scripts/verify-pages.mjs"
+  },
+  "dependencies": {
+    "cannon-es": "^0.20.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@fontsource/anton": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/manrope": "^5.2.8",
+    "@fontsource/space-grotesk": "^5.2.10",
+    "playwright": "^1.56.1",
+    "vite": "^7.1.12"
+  }
+}
