@@ -2,7 +2,7 @@
 
 ## Поточний стан — ітерація 06, 24.10.2026
 
-Версія 0.5.0 підготовлена локально. Live GitHub Pages ще містить 0.4.0; публікація цієї ітерації не виконувалася.
+Версія 0.5.0 опублікована: https://dvaderfun.github.io/goingdownfromsky/. Release commit `bd90c27a355b750f62b250bee551d8fe0be1a3a4`, Pages run [40094381030](https://github.com/Dvaderfun/goingdownfromsky/actions/runs/40094381030) — build/deploy success. CI підтвердив 57/57 тестів і production build; live `test:pages` пройшов. JavaScript asset `index-KVnol0m5.js` збігається з перевіреною локальною збіркою.
 
 - Виправлено near miss за мінімальним проміжком у вертикальній смузі, фіксацію напряму ривка й комбо у часі світу. Перша вежа перекриває всі п'ять сталих смуг; наступні мають seeded фрази weave/hunter/risk/rest і безпечні необов'язкові ризикові маршрути. Висота обмежена 720 м після рівня 10.
 - П'ять кварталів мають різні палітри, вивіски й деталі мешканців. Captured window виділено за id; плечі, повні дзеркальні руки, їхній спільний центр і колізії збережено. Intro3.2, arcade/hard та архів 0.2.1 працюють за попередніми контрактами.
@@ -12,7 +12,7 @@
 - Render у фінальному `npm run test:browser` — 190/190, `artifacts/render-regression-report.json`: passed=true, errors=[], failures=[]. 98 аркадних,56 hard,24 intro та12 district cases. Перший окремий render зупинився на старому підрахунку98 після додавання12 district; нові сценарії отримали власний suite, а всі98 попередні збережені.
 - Повний `npm run test:browser` завершився з exit 0: реальні arcade/hard win, caught із причиною, intro/pause/skip, keyboard/touch, goals, той самий retry layout, daily win/ізоляція рекордів/reload і 360×640 menu, archive. `browser-report.json`: passed=true, errors=[]. Перша звичайна спроба дала 4355/A, 4 risk, 4 near і combo 8; денна — 1845/C. Це автоматичні проходи, не людський плейтест.
 - Локальний `npm run test:pages` пройшов: JS/CSS/шрифти/favicon, mobile daily intro/skip, звичайне керування й незалежний archive під `/goingdownfromsky/`; failed/escapedPrefix/errors порожні. Перший Pages запуск спіткнувся об helper race між game.pause і показом DOM-діалогу; helper тепер чекає однакового game/UI mode, серійний повтор успішний. Build має звичайне попередження Vite про chunk понад 500 kB; збірка успішна.
-- Локальний preview запущено на http://127.0.0.1:5173/ (HTTP 200). Деталі ітерації — `ITERATION_06.md`; live URL усе ще 0.4.0.
+- Live `npm run test:pages -- https://dvaderfun.github.io/goingdownfromsky/` пройшов: intro/pause/skip, керування, mobile «Дощ дня», ресурси й archive. `pages-report.json`: passed=true, target=live URL, errors=[], failed=[], escapedPrefix=[]. Локальний preview — http://127.0.0.1:5173/. Деталі ітерації — `ITERATION_06.md`.
 
 ### Конкретний наступний крок
 
@@ -128,4 +128,4 @@ npm run test:browser
 
 ## Орієнтир для наступної сесії
 
-> Продовжуємо RAIN / PAIN 0.5.0. Прочитай AGENTS.md, docs/GAME_DESIGN.md, docs/ARCHITECTURE.md, docs/NEXT_SESSION.md, docs/ITERATION_06.md та src/contracts.md. Ітерація 06 готова локально: 57 Node/190 render/build/повний browser/local Pages пройшли; live ще 0.4.0. Перевір новий баланс і цілі S на 1/3/5/10 та «Дощі дня», збережи intro на даху, paired NPC та обидва фінали. Запиши фактичні метрики й конкретний наступний крок тут.
+> Продовжуємо RAIN / PAIN 0.5.0. Прочитай AGENTS.md, docs/GAME_DESIGN.md, docs/ARCHITECTURE.md, docs/NEXT_SESSION.md, docs/ITERATION_06.md та src/contracts.md. Ітерація 06 опублікована: 57 Node/190 render/build/повний browser/local і live Pages пройшли, Pages run 40094381030 success. Перевір новий баланс і цілі S на 1/3/5/10 та «Дощі дня», збережи intro на даху, paired NPC та обидва фінали. Запиши фактичні метрики й конкретний наступний крок тут.

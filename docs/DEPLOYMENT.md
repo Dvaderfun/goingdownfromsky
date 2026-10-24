@@ -28,6 +28,10 @@ npm run test:pages -- https://dvaderfun.github.io/goingdownfromsky/
 
 ## Публікація 0.4.0 — 24.10.2026
 
-Ітерація 06 / 0.5.0 підготовлена локально: 57 Node-тестів, production build, повний browser із 190 render-сценаріями та локальний test:pages пройшли, включно з «Дощем дня» під Pages prefix. Її публікацію ще не виконано; live версія лишається 0.4.0. Після публікації повторити live `test:pages` за процедурою вище.
-
 Опубліковано commit ab9c20c3a65ad3547bacda4dc4a02740d7bd50a7. Pages run 40092018040 завершив build/deploy з success. 40 Node-тестів, 178 render-станів, build, серійний browser і local/live Pages перевірки пройшли. На живій основній URL видно новий rooftop intro, pause/skip і незмінний archive 0.2.1; WebGL, JS/CSS/fonts/favicon та керування працюють без помилок. Live звіт — artifacts/pages-report.json.
+
+## Публікація 0.5.0 — 24.10.2026
+
+Опубліковано commit `bd90c27a355b750f62b250bee551d8fe0be1a3a4`. [Pages run 40094381030](https://github.com/Dvaderfun/goingdownfromsky/actions/runs/40094381030) завершив build/deploy з success; CI підтвердив 57 Node-тестів і production build. Локальні 190 render-сценаріїв, повний browser і Pages gates пройшли перед публікацією.
+
+Live `npm run test:pages -- https://dvaderfun.github.io/goingdownfromsky/` пройшов: JS/CSS/локальні шрифти/favicon, WebGL, intro/pause/skip, рух/ривок, mobile перемикач і «Дощ дня», незалежний archive 0.2.1. `artifacts/pages-report.json`: passed=true, errors=[]; failed/escapedPrefix порожні. Asset `assets/index-KVnol0m5.js` на live збігається з локально перевіреною збіркою 0.5.0.
