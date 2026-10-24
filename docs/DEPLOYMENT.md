@@ -26,7 +26,6 @@ npm run test:pages -- https://dvaderfun.github.io/goingdownfromsky/
 
 Локальний `npm run test:pages` і live `npm run test:pages -- https://dvaderfun.github.io/goingdownfromsky/` пройшли. У двох версіях завантажуються WebGL, JS/CSS, шрифти й favicon; перевірені керування, пауза/ривок, збереження режиму, phone selector і запуск старої аркади. Немає browser errors, невдалих ресурсів або запитів поза Pages prefix. Локальний звіт — `artifacts/pages-report.json` (останній live-прогін).
 
-## Підготовка 0.4.0 — 24.10.2026
+## Публікація 0.4.0 — 24.10.2026
 
-Локальна збірка вступної сцени пройшла `npm run build` і `npm run test:pages` під `/goingdownfromsky/`. Перевірено intro, паузу й відновлення сцени, пропуск кнопкою/клавіатурою/touch, mobile layout та негайний запуск архіву 0.2.1. Серійний browser gate без render частини також пройшов. Новий production build ще не опублікований: після push перевірити успіх Pages workflow і виконати live-команду вище. У live-звіті підтвердити, що основна URL показує intro, а `/releases/arcade-0.2.1/` і далі стартує без нього. Фінальний строгий render-suite із 178 станами пройшов до публікації.
-
+Опубліковано commit ab9c20c3a65ad3547bacda4dc4a02740d7bd50a7. Pages run 40092018040 завершив build/deploy з success. 40 Node-тестів, 178 render-станів, build, серійний browser і local/live Pages перевірки пройшли. На живій основній URL видно новий rooftop intro, pause/skip і незмінний archive 0.2.1; WebGL, JS/CSS/fonts/favicon та керування працюють без помилок. Live звіт — artifacts/pages-report.json.

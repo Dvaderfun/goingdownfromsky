@@ -31,4 +31,4 @@ Node: intro default/skip/clock freeze, inputs blocked, takeoff once, natural com
 
 Пройдено 40 Node-тестів, 178 графічних сценаріїв, production build, послідовний повний browser smoke та перевірку production під Pages prefix. Intro показує фактичні ноги на даху й відрив за край; у паузі поза/камера незмінні. Завершення та skip точно повертають персонажа до (0,1.2,3), без другого launch. Обидва фінали, збереження режиму/оцінки, touch і незалежний archive пройшли повторно. Паралельне GPU-навантаження вплинуло на перший запуск browser bot; послідовний повтор пройшов без змін автопілота чи gameplay.
 
-Публікація на GitHub Pages буде підтверджена після push і live-перевірки; підсумковий запис — у docs/NEXT_SESSION.md.
+Версію 0.4.0 опубліковано на https://dvaderfun.github.io/goingdownfromsky/. Commit ab9c20c і Pages run 40092018040 пройшли build/deploy. Live test:pages підтвердив новий intro, pause/skip, заморожені лічильники, правильні ресурси, керування й незмінний archive; errors=[]. Підсумковий запис — docs/NEXT_SESSION.md.

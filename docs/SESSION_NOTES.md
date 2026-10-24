@@ -13,7 +13,7 @@
 - `npm run test:pages`: пройшов локально під `/goingdownfromsky/`, включно з новим intro/UI/skip/keyboard/touch/mobile і запуском незміненого архіву.
 - Серійний повний browser сценарій із `--skip-render`: пройшов природний вступ і заморожені inputs/дистанцію, паузу на точному кадрі, Enter/Space/touch skip, arcade win із risk/hunter/grade, caught/retry, hard win із фізикою, налаштування/mobile та негайний старт архіву. Перший конкурентний запуск упав під навантаженням GPU; серійний повтор пройшов без змін продуктового коду.
 - Фінальний строгий render suite: 178/178 пройшли (154 попередні +24 intro), errors=[], failures=[]. Перевірено опору ніг/край даху, незмінну позу й камеру в паузі, skip, звичайні/жорсткі фінали, DPR/resize та ресурси. Чотири старі очікування декоративного roof-hop оновлено під intro, після цього строгий повтор успішний.
-- Новий Pages build ще не опублікований; live URL перевірити після успішного CI/Pages deploy.
+- Опубліковано 0.4.0: commit ab9c20c, Pages run 40092018040 success для build/deploy. Live test:pages пройшов на основній адресі: intro, пауза/skip, заморожені лічильники, ресурси, керування й archive перевірено; errors=[] і невдалих ресурсів немає.
 
 ## GitHub Pages — 24.10.2026
 
@@ -138,4 +138,3 @@ node scripts/inspect-render.mjs
 - Mobile: `artifacts/mobile-menu.png`, `mobile-game.png`, `mobile-pause.png`.
 
 Артефакти генеруються локально й виключені з Git. Наступні кроки та вступ до нової сесії — у [NEXT_SESSION.md](NEXT_SESSION.md).
-
