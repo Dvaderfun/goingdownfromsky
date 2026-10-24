@@ -1,4 +1,4 @@
-import { levelConfig } from "./game.js";
+import { dailyChallenge, levelConfig } from "./game.js";
 
 const arrowDown =
   '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v17m-7-7 7 7 7-7" stroke="currentColor" stroke-width="1.7"/></svg>';
@@ -13,6 +13,12 @@ const gradeCopy = {
   B: "Впевнено вниз. Додай трохи ризику.",
   C: "Земля твоя. Тепер лети зі стилем.",
 };
+const caughtCopy = {
+  hunter: { name: "Переслідувач", hint: "Він стежить за тобою. Після спалаху зміни курс — захват уже зафіксовано." },
+  sweep: { name: "Руки в русі", hint: "Ці руки зміщуються вбік. Стеж за їхнім рухом або проскочи ривком." },
+  long: { name: "Довгі руки", hint: "Залишай більше простору до рук. Ривок ненадовго захищає від захвату." },
+  grab: { name: "Чужі обійми", hint: "Обери вільний прохід завчасно. Фокус дає час на маневр, ривок — захист." },
+};
 
 export class GameUI {
   constructor(root, actions) {
@@ -20,11 +26,13 @@ export class GameUI {
     this.actions = actions;
     this.mode = null;
     this.lastNearMisses = 0;
+    this.lastRiskDrops = 0;
     this.toastTimer = null;
     this.comboTimer = null;
     this.focusReturn = null;
     this.selectedLevel = 1;
     this.latestUnlockedLevel = null;
+    this.dailyCheckAt = 0;
     this.touchControls = window.matchMedia("(hover: none), (max-width: 760px)");
 
     root.innerHTML = `
@@ -32,15 +40,15 @@ export class GameUI {
       <header class="masthead">
         <button class="brand" data-action="menu" aria-label="RAIN / PAIN — головний екран">
           <svg class="brand-mark" viewBox="0 0 38 38" fill="none" aria-hidden="true"><path d="m7 4-4 9m15-9-4 9m15-9-4 9M19 17v15m-6-6 6 6 6-6" stroke="currentColor" stroke-width="2"/></svg>
-          <span>RAIN <span class="brand-slash">/</span> PAIN<small>THE ART OF FALLING</small></span>
+          <span>RAIN <span class="brand-slash">/</span> PAIN<small>МИСТЕЦТВО ПАДІННЯ</small></span>
         </button>
-        <span class="header-edition">БРАУЗЕРНА АРКАДА <span>VOL. 01 / 2026</span></span>
+        <span class="header-edition">БРАУЗЕРНА АРКАДА <span>ВИПУСК 01 / 2026</span></span>
         <nav class="utilities" aria-label="Налаштування гри">
           <button class="utility-button sound-button" data-action="mute" data-ref="sound" aria-pressed="false" aria-label="Вимкнути звук">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m11 5-5 4H3v6h3l5 4V5Z" stroke="currentColor" stroke-width="1.5"/><path class="sound-wave" d="M15 8c2 2 2 6 0 8m3-11c4 4 4 10 0 14" stroke="currentColor" stroke-width="1.5"/><path class="sound-slash" d="m15 9 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span data-ref="soundLabel">ЗВУК ON</span>
+            <span data-ref="soundLabel">ЗВУК УВІМК.</span>
           </button>
-          <button class="utility-button motion-button" data-action="motion" data-ref="motion" aria-pressed="false" aria-label="Зменшити рух та спалахи"><span class="motion-glyph" aria-hidden="true">≋</span><span data-ref="motionLabel">РУХ ON</span></button>
+          <button class="utility-button motion-button" data-action="motion" data-ref="motion" aria-pressed="false" aria-label="Зменшити рух та спалахи"><span class="motion-glyph" aria-hidden="true">≋</span><span data-ref="motionLabel">РУХ ПОВНИЙ</span></button>
           <button class="utility-button pause-button" data-action="pause" data-ref="pauseButton" aria-label="Пауза" hidden><span aria-hidden="true">Ⅱ</span></button>
         </nav>
       </header>
@@ -54,12 +62,18 @@ export class GameUI {
           <p class="tower-record"><span>РЕКОРД ВЕЖІ</span><strong data-ref="menuTowerScore">ЩЕ ПОПЕРЕДУ</strong><span class="mini-grade" data-ref="menuTowerGrade" hidden></span></p>
           <div class="how-to" aria-label="Керування">
             <div><span class="key-pair"><kbd>A</kbd><kbd>D</kbd><span class="key-alternative">/ ← →</span></span><span>ухиляйся</span></div>
-            <div><kbd class="wide-key">SPACE</kbd><span>ривок</span></div>
-            <div><kbd class="wide-key">SHIFT</kbd><span>сповільни час</span></div>
+            <div><kbd class="wide-key">ПРОБІЛ</kbd><span>ривок + захист</span></div>
+            <div><kbd class="wide-key">SHIFT</kbd><span>утримуй фокус</span></div>
           </div>
-          <p class="touch-instruction">Веди пальцем, щоб ухилятися. Ривок і фокус — унизу.</p>
+          <p class="touch-instruction">Веди пальцем або тисни ← →. Ривок захищає від рук. Утримуй фокус, щоб сповільнити час.</p>
         </div>
         <aside class="scene-caption"><span class="caption-rule" aria-hidden="true"></span><div><p><span class="caption-kicker">ПЕРЕСЛІДУВАЧ</span>Стежить → спалах → зміни курс.</p><p class="risk-caption"><span class="risk-dot" aria-hidden="true"></span>Коралова крапля: більше очок + фокус.</p></div><span class="caption-arrow" aria-hidden="true">↙</span></aside>
+        <div class="menu-options">
+        <section class="daily-challenge" aria-labelledby="daily-title">
+          <button class="daily-button" data-action="daily" data-ref="dailyButton"><span><strong id="daily-title">Дощ дня</strong><span data-ref="dailyDate"></span></span><span class="daily-arrow" aria-hidden="true">↘</span></button>
+          <p class="daily-description">Одна вежа на день. Твій найкращий політ.</p>
+          <p class="daily-record"><span>ТВІЙ РЕКОРД</span><strong data-ref="dailyScore">ЩЕ ПОПЕРЕДУ</strong><span class="mini-grade" data-ref="dailyGrade" hidden></span></p>
+        </section>
         <section class="landing-style" aria-labelledby="landing-style-label" data-ref="landingStyle" data-impact-mode="arcade">
           <p id="landing-style-label" class="landing-style-label">СТИЛЬ ФІНАЛУ</p>
           <div class="landing-style-options" role="group" aria-labelledby="landing-style-label" aria-describedby="landing-style-description">
@@ -68,13 +82,14 @@ export class GameUI {
           </div>
           <p id="landing-style-description" class="landing-style-description" data-ref="impactModeDescription" aria-live="polite">Спалах і дощові кола</p>
         </section>
+        </div>
         <aside class="menu-record"><span class="record-icon" aria-hidden="true">↗</span><span>ТВІЙ РЕКОРД<strong data-ref="menuBest">0</strong></span></aside>
-        <div class="menu-location"><span class="location-cross" aria-hidden="true">+</span><span>KYIV, UA<br><span class="location-muted">00:17 / RAIN EXPECTED</span></span></div>
+        <div class="menu-location"><span class="location-cross" aria-hidden="true">+</span><span>КИЇВ, УКРАЇНА<br><span class="location-muted">00:17 / ОЧІКУЄТЬСЯ ДОЩ</span></span></div>
       </section>
 
       <section class="intro-screen" data-ref="introScreen" aria-label="Стартова сцена на даху" hidden>
         <div class="intro-caption"><p class="intro-eyebrow">ВЕЖА <span data-ref="introLevel">01</span> · ДАХ</p><h2 data-ref="introName">Тихий район</h2><p>Місто ще спить. Дощ уже почався.</p></div>
-        <button class="intro-skip" data-action="skipIntro" data-ref="skipIntroButton" aria-label="Пропустити стартову сцену — пробіл"><span>Пропустити</span><kbd>SPACE</kbd><span class="intro-skip-arrow" aria-hidden="true">↘</span></button>
+        <button class="intro-skip" data-action="skipIntro" data-ref="skipIntroButton" aria-label="Пропустити стартову сцену — пробіл"><span>Пропустити</span><kbd>ПРОБІЛ</kbd><span class="intro-skip-arrow" aria-hidden="true">↘</span></button>
       </section>
 
       <section class="game-hud" data-ref="hud" aria-label="Стан гри" hidden>
@@ -86,11 +101,12 @@ export class GameUI {
           <div class="score-readout"><span class="micro-label">ОЧКИ</span><strong data-ref="score">0</strong></div>
         </div>
         <div class="descent-meter" aria-label="Прогрес падіння"><span class="meter-roof">ДАХ</span><div class="descent-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-ref="descentProgress"><span class="descent-fill" data-ref="descentFill"></span><span class="descent-pointer" data-ref="descentPointer"></span></div><span class="meter-ground">ЗЕМЛЯ</span><span class="descent-percent" data-ref="progressPercent">0%</span></div>
-        <div class="combo-flash" data-ref="comboFlash" aria-live="polite"><strong data-ref="comboNumber">×2</strong><span>НА МЕЖІ</span></div>
+        <div class="combo-flash" data-ref="comboFlash" aria-live="polite"><strong data-ref="comboNumber">×2</strong><span data-ref="comboKind">НА МЕЖІ</span></div>
+        <div class="combo-readout" data-ref="comboReadout"><span>КОМБО</span><strong data-ref="activeCombo">×0</strong><span class="combo-track"><span data-ref="comboFill"></span></span></div>
         <div class="flight-status"><span class="status-dot" aria-hidden="true"></span><span data-ref="windLabel">ТИХИЙ ВІТЕР</span><span class="flight-speed"><span data-ref="speed">11</span> м/с</span></div>
         <p class="tutorial-hint" data-ref="tutorialHint" role="status" aria-live="polite" hidden></p>
         <div class="ability-controls">
-          <button class="ability-button dash-ability" data-action="dash" data-ref="dashButton" aria-label="Ривок — пробіл"><span class="ability-top"><span class="ability-symbol" aria-hidden="true">↯</span><span>РИВОК</span><kbd>SPACE</kbd></span><span class="ability-meter"><span data-ref="dashFill"></span></span><span class="ability-state" data-ref="dashState">ГОТОВО</span></button>
+          <button class="ability-button dash-ability" data-action="dash" data-ref="dashButton" aria-label="Ривок — пробіл. Короткий захист від рук."><span class="ability-top"><span class="ability-symbol" data-ref="dashDirection" aria-hidden="true">→</span><span>РИВОК</span><kbd>ПРОБІЛ</kbd></span><span class="ability-meter"><span data-ref="dashFill"></span></span><span class="ability-state" data-ref="dashState">ГОТОВО</span></button>
           <button class="ability-button focus-ability" data-action="slow" data-ref="focusButton" aria-label="Утримувати для сповільнення часу — Shift"><span class="ability-top"><span class="ability-symbol focus-symbol" aria-hidden="true">◎</span><span>ФОКУС</span><kbd>SHIFT</kbd></span><span class="ability-meter"><span data-ref="focusFill"></span></span><span class="ability-state" data-ref="focusState">65%</span></button>
         </div>
         <div class="touch-movement" aria-label="Рух персонажа"><button class="touch-direction" data-action="left" aria-label="Рух ліворуч">←</button><button class="touch-direction" data-action="right" aria-label="Рух праворуч">→</button></div>
@@ -110,19 +126,21 @@ export class GameUI {
 
       <div class="overlay-screen result-overlay" data-ref="resultScreen" hidden>
         <section class="result-panel" role="dialog" aria-modal="true" aria-labelledby="result-title" data-ref="resultDialog">
-          <div class="result-topline"><p class="eyebrow"><span class="signal-dot"></span><span data-ref="resultEyebrow">ІДЕАЛЬНЕ ПАДІННЯ</span></p><span class="result-level" data-ref="resultLevel">LEVEL 01 / COMPLETE</span></div>
+          <div class="result-topline"><p class="eyebrow"><span class="signal-dot"></span><span data-ref="resultEyebrow">ІДЕАЛЬНЕ ПАДІННЯ</span></p><span class="result-level" data-ref="resultLevel">ВЕЖА 01 / ПРОЙДЕНО</span></div>
           <h2 id="result-title" data-ref="resultTitle"><span data-ref="resultLine1">На вулиці rain — </span><span data-ref="resultLine2">на душі pain</span></h2>
           <div class="result-description-row"><p class="panel-description result-description" data-ref="resultDescription">Приземлення гучне. Наступний будинок вищий.</p><span class="new-best-stamp" data-ref="newBest" hidden>НОВИЙ<br>РЕКОРД ↗</span></div>
           <p class="result-impact-mode" data-ref="resultImpactMode" data-impact-mode="arcade">АРКАДНИЙ ФІНАЛ</p>
+          <div class="caught-feedback" data-ref="caughtFeedback" hidden><p><strong data-ref="caughtProgress">0%</strong><span>ВЕЖІ ПРОЙДЕНО</span><span class="caught-type" data-ref="caughtType"></span></p><p data-ref="caughtHint"></p></div>
           <div class="result-performance" data-ref="resultPerformance" hidden><span class="grade-badge" data-ref="gradeBadge" aria-label="Оцінка стилю польоту"><strong data-ref="resultGrade">C</strong><span>СТИЛЬ</span></span><div class="grade-description"><p data-ref="gradeDescription">Земля твоя. Тепер лети зі стилем.</p><span>БЛИЗЬКІ ПРОЛЬОТИ · РИЗИКОВІ КРАПЛІ · КОМБО</span></div></div>
+          <p class="result-goal" data-ref="resultGoal" hidden></p>
           <dl class="result-stats"><div class="result-score-stat"><dt>ОЧКИ</dt><dd data-ref="resultScore">0</dd></div><div><dt>НА МЕЖІ</dt><dd data-ref="resultNear">0</dd></div><div><dt>КРАПЛІ</dt><dd data-ref="resultDrops">0</dd></div><div class="risk-stat"><dt>З НИХ РИЗИКОВІ</dt><dd data-ref="resultRiskDrops">0</dd></div><div><dt>КОМБО</dt><dd data-ref="resultCombo">×0</dd></div><div><dt>ЧАС</dt><dd data-ref="resultTime">0.0<span>с</span></dd></div></dl>
           <p class="result-tower-record"><span data-ref="resultRecordLabel">РЕКОРД ЦІЄЇ ВЕЖІ</span><strong data-ref="resultTowerScore">0</strong><span class="mini-grade" data-ref="resultTowerGrade" hidden></span></p>
-          <div class="result-actions"><button id="next-button" class="primary-button" data-action="next" data-ref="nextButton"><span>Вище. Ще вище.</span>${arrowRight}</button><button id="retry-button" class="secondary-button" data-action="retry" data-ref="retryButton"><span>Ще одне падіння</span><span aria-hidden="true">↻</span></button><button class="text-button result-menu" data-action="menu">На головну <span aria-hidden="true">↗</span></button></div>
+          <div class="result-actions"><button id="next-button" class="primary-button" data-action="next" data-ref="nextButton"><span>Вище. Ще вище.</span>${arrowRight}</button><button id="retry-button" class="secondary-button" data-action="retry" data-ref="retryButton"><span data-ref="retryLabel">Ще одне падіння</span><span aria-hidden="true">↻</span></button><button class="text-button result-menu" data-action="menu">На головну <span aria-hidden="true">↗</span></button></div>
           <p class="result-footnote" data-ref="resultFootnote">ДОЩ ТРИВАЄ. РІВЕНЬ ЗРОСТАЄ.</p>
         </section>
       </div>
 
-      <footer class="city-strip"><span><span class="footer-dot" aria-hidden="true"></span> KYIV AFTER DARK</span><span class="footer-weather">ДОЩ: 100% <span>НАСТРІЙ: МІНЛИВИЙ</span></span><span class="footer-signature">MADE TO FALL <span aria-hidden="true">↘</span></span></footer>
+      <footer class="city-strip"><span><span class="footer-dot" aria-hidden="true"></span> КИЇВ ПІСЛЯ ОПІВНОЧІ</span><span class="footer-weather">ДОЩ: 100% <span>НАСТРІЙ: МІНЛИВИЙ</span></span><span class="footer-signature">НАРОДЖЕНИЙ ПАДАТИ <span aria-hidden="true">↘</span></span></footer>
       <div class="toast-message" data-ref="toast" role="status" aria-live="polite"></div>
     `;
 
@@ -307,7 +325,7 @@ export class GameUI {
       state.muted ? "Увімкнути звук" : "Вимкнути звук",
     );
     this.refs.sound.dataset.muted = String(Boolean(state.muted));
-    this.text("soundLabel", state.muted ? "ЗВУК OFF" : "ЗВУК ON");
+    this.text("soundLabel", state.muted ? "ЗВУК ВИМК." : "ЗВУК УВІМК.");
     this.refs.motion.setAttribute(
       "aria-pressed",
       String(Boolean(state.reducedMotion)),
@@ -318,12 +336,12 @@ export class GameUI {
         ? "Увімкнути повні анімації"
         : "Зменшити рух та спалахи",
     );
-    this.text("motionLabel", state.reducedMotion ? "РУХ OFF" : "РУХ ON");
+    this.text("motionLabel", state.reducedMotion ? "РУХ МІНІМ." : "РУХ ПОВНИЙ");
     this.text(
       "menuBest",
       numberFormat.format(Math.round(state.bestScore || 0)),
     );
-    this.updateMenu(state);
+    if (mode === "menu") this.updateMenu(state);
     this.text("levelNumber", levelNumber);
     this.text("levelName", state.levelName || "Чужі вікна");
     this.text("introLevel", levelNumber);
@@ -344,20 +362,34 @@ export class GameUI {
     this.refs.dashButton.disabled = cooldown > 0 || mode !== "playing";
     this.refs.focusButton.disabled = mode !== "playing";
     this.refs.focusButton.classList.toggle("is-active", Boolean(state.slow));
+    this.refs.focusButton.classList.toggle("is-exhausted", Boolean(state.focusExhausted));
+    const touch = this.touchControls.matches;
+    this.root.dataset.controls = touch ? "touch" : "keyboard";
+    const dashLeft = state.dashDirection < 0;
+    this.text("dashDirection", dashLeft ? "←" : "→");
+    this.refs.dashButton.setAttribute("aria-label", `Ривок ${dashLeft ? "ліворуч" : "праворуч"}${touch ? "" : " — пробіл"}. Короткий захист від рук.`);
+    this.refs.focusButton.setAttribute("aria-label", `Утримуй ${touch ? "кнопку" : "Shift"}, щоб сповільнити час. ${state.focusExhausted ? "Фокус вичерпано — відпусти й натисни знову." : `Запас ${Math.round(focus * 100)} відсотків.`}`);
+    this.refs.skipIntroButton.setAttribute("aria-label", `Пропустити стартову сцену${touch ? "" : " — пробіл"}`);
     this.refs.focusFill.style.transform = `scaleX(${focus})`;
     this.text(
       "dashState",
-      cooldown > 0 ? `${cooldown.toFixed(1)} с` : "ГОТОВО",
+      state.dashTimer > 0 ? "ЗАХИСТ" : cooldown > 0 ? `${cooldown.toFixed(1)} с` : "ГОТОВО",
     );
     this.text(
       "focusState",
-      state.slow ? "ЧАС У ТВОЇХ РУКАХ" : `${Math.round(focus * 100)}%`,
+      state.focusExhausted ? "ВІДПУСТИ" : state.slow ? "АКТИВНИЙ" : `${Math.round(focus * 100)}%`,
     );
     const fallSpeed = Number(state.fallSpeed ?? state.speed);
     this.text("speed", Math.round(Number.isFinite(fallSpeed) ? fallSpeed : 0));
     let hint = mode === "playing" ? state.tutorialHint || "" : "";
-    if (this.touchControls.matches && hint.startsWith("A / D"))
-      hint = "Веди пальцем — обирай траєкторію";
+    if (touch) {
+      hint = hint.replace(/A \/ D або ← \/ →/g, "Веди пальцем або тисни ← →")
+        .replace(/A \/ D/g, "Веди пальцем")
+        .replace(/Space/g, "Кнопка ривка")
+        .replace(/Shift/g, "Утримуй фокус");
+    } else {
+      hint = hint.replace(/Space/g, "Пробіл");
+    }
     this.text("tutorialHint", hint);
     this.refs.tutorialHint.hidden = !hint;
     this.refs.tutorialHint.dataset.phase =
@@ -372,12 +404,14 @@ export class GameUI {
           : "ПОРИВИ ВІТРУ →",
     );
 
+    const riskIncreased = (state.riskDrops || 0) > this.lastRiskDrops;
     if (
       mode === "playing" &&
-      (state.combo || 0) > 1 &&
-      (state.nearMisses || 0) > this.lastNearMisses
+      (state.combo || 0) > 0 &&
+      ((state.nearMisses || 0) > this.lastNearMisses || riskIncreased)
     ) {
       this.text("comboNumber", `×${state.combo}`);
+      this.text("comboKind", riskIncreased ? "РИЗИК ОКУПИВСЯ" : "НА МЕЖІ");
       this.refs.comboFlash.classList.remove("is-visible");
       void this.refs.comboFlash.offsetWidth;
       this.refs.comboFlash.classList.add("is-visible");
@@ -388,6 +422,10 @@ export class GameUI {
       );
     }
     this.lastNearMisses = state.nearMisses || 0;
+    this.lastRiskDrops = state.riskDrops || 0;
+    this.text("activeCombo", `×${state.combo || 0}`);
+    this.refs.comboReadout.classList.toggle("has-combo", (state.combo || 0) > 0);
+    this.refs.comboFill.style.transform = `scaleX(${clamp((state.comboRemaining || 0) / 3.6)})`;
 
     if (mode === "result") this.updateResult(state);
     this.setMode(mode, state.resumeMode);
@@ -400,7 +438,19 @@ export class GameUI {
     this.refs.landingStyle.dataset.impactMode = hard ? "hard" : "arcade";
     this.refs.modeArcade.setAttribute("aria-pressed", String(!hard));
     this.refs.modeHard.setAttribute("aria-pressed", String(hard));
-    this.text("impactModeDescription", hard ? "Ragdoll і кров" : "Спалах і дощові кола");
+    this.text("impactModeDescription", hard ? "Фізичне падіння тіла та кров" : "Спалах і дощові кола");
+    if (Date.now() >= this.dailyCheckAt) {
+      this.daily = dailyChallenge();
+      this.dailyCheckAt = Date.now() + 60000;
+    }
+    const daily = this.daily;
+    const dailyRecord = state.dailyRecords?.[daily.date];
+    this.text("dailyDate", `${daily.date.split("-").reverse().join(".")} · ВЕЖА ${daily.level}`);
+    this.text("dailyScore", dailyRecord ? numberFormat.format(Math.round(dailyRecord.score || 0)) : "ЩЕ ПОПЕРЕДУ");
+    const dailyGrade = dailyRecord?.grade in gradeCopy ? dailyRecord.grade : "";
+    this.text("dailyGrade", dailyGrade);
+    this.refs.dailyGrade.hidden = !dailyGrade;
+    this.refs.dailyButton.setAttribute("aria-label", `Дощ дня, ${daily.date}, вежа ${daily.level}. ${dailyRecord ? `Твій рекорд ${dailyRecord.score}, стиль ${dailyGrade}.` : "Почати денний виклик."}`);
     const unlocked = Math.max(1, Number(state.unlockedLevel) || 1);
     if (this.latestUnlockedLevel !== unlocked) this.selectedLevel = unlocked;
     this.latestUnlockedLevel = unlocked;
@@ -426,6 +476,7 @@ export class GameUI {
     const result = state.lastResult || state;
     const won = state.outcome === "win";
     const hard = (result.runImpactMode ?? state.runImpactMode) === "hard";
+    const daily = Boolean(result.dailyDate);
     this.refs.resultImpactMode.dataset.impactMode = hard ? "hard" : "arcade";
     this.text("resultImpactMode", hard ? "ЖОРСТКИЙ ФІНАЛ" : "АРКАДНИЙ ФІНАЛ");
     this.refs.resultImpactMode.hidden = !won;
@@ -434,16 +485,21 @@ export class GameUI {
     this.text("resultEyebrow", won ? "ІДЕАЛЬНЕ ПАДІННЯ" : "ТЕБЕ СПІЙМАЛИ");
     this.text(
       "resultLevel",
-      `LEVEL ${String(result.level || state.level || 1).padStart(2, "0")} / ${won ? "COMPLETE" : "TRY AGAIN"}`,
+      daily ? `ДОЩ ДНЯ / ${result.dailyDate.split("-").reverse().join(".")}` : `ВЕЖА ${String(result.level || state.level || 1).padStart(2, "0")} / ${won ? "ПРОЙДЕНО" : "ЩЕ СПРОБА"}`,
     );
     this.text("resultLine1", won ? "На вулиці rain — " : "Обійми? ");
     this.text("resultLine2", won ? "на душі pain" : "Не цього разу.");
     this.text(
       "resultDescription",
       won
-        ? "Приземлення гучне. Наступний будинок вищий."
-        : "Чужі руки зіпсували траєкторію. Дощ дає ще одну спробу.",
+        ? daily ? "Той самий дощ. Ще одна траєкторія. Переверш свій денний рекорд." : "Приземлення гучне. Місто має ще одну вежу."
+        : "Обійми без попереднього запису. Дощ дає ще одну спробу.",
     );
+    this.refs.caughtFeedback.hidden = won;
+    this.text("caughtProgress", `${Math.round(clamp(result.progress) * 100)}%`);
+    const caught = caughtCopy[result.caughtBy?.type] || caughtCopy.grab;
+    this.text("caughtType", caught.name);
+    this.text("caughtHint", caught.hint);
     this.text(
       "resultScore",
       numberFormat.format(Math.round(result.score || 0)),
@@ -459,25 +515,28 @@ export class GameUI {
     this.text("gradeDescription", gradeCopy[grade] || "");
     this.refs.gradeBadge.dataset.grade = grade;
     this.refs.gradeBadge.setAttribute("aria-label", `Оцінка стилю польоту ${grade}`);
-    const record = state.levelRecords?.[result.level || state.level];
-    const recordScore = result.levelBestScore ?? record?.score ?? 0;
+    this.text("resultGoal", result.style?.goal || "");
+    this.refs.resultGoal.hidden = !won || !result.style?.goal;
+    const record = daily ? state.dailyRecords?.[result.dailyDate] : state.levelRecords?.[result.level || state.level];
+    const recordScore = daily ? result.dailyScore ?? record?.score ?? 0 : result.levelBestScore ?? record?.score ?? 0;
     this.text("resultTowerScore", numberFormat.format(Math.round(recordScore)));
     this.text(
       "resultRecordLabel",
-      result.newLevelBest ? "НОВИЙ РЕКОРД ЦІЄЇ ВЕЖІ ↗" : "РЕКОРД ЦІЄЇ ВЕЖІ",
+      daily ? result.newDailyBest ? "НОВИЙ РЕКОРД ДНЯ ↗" : "РЕКОРД ДНЯ" : result.newLevelBest ? "НОВИЙ РЕКОРД ЦІЄЇ ВЕЖІ ↗" : "РЕКОРД ЦІЄЇ ВЕЖІ",
     );
     const bestGrade = record ? record.grade : result.grade;
     const recordGrade = bestGrade in gradeCopy ? bestGrade : "";
     this.text("resultTowerGrade", recordGrade);
     this.refs.resultTowerGrade.hidden = !recordGrade;
-    this.refs.newBest.hidden = !result.newBest;
-    this.refs.nextButton.hidden = !won;
-    this.refs.retryButton.className = won
+    this.refs.newBest.hidden = !(daily ? result.newDailyBest : result.newBest);
+    this.refs.nextButton.hidden = !won || daily;
+    this.refs.retryButton.className = won && !daily
       ? "secondary-button"
       : "primary-button";
+    this.text("retryLabel", daily ? "Ще раз. Той самий дощ." : "Ще одне падіння");
     this.text(
       "resultFootnote",
-      won ? "ДОЩ ТРИВАЄ. РІВЕНЬ ЗРОСТАЄ." : "НЕ КОЖНІ ОБІЙМИ ВАРТО ПРИЙМАТИ.",
+      daily ? "ТВІЙ ДЕННИЙ РЕКОРД ЗБЕРІГАЄТЬСЯ В ЦЬОМУ БРАУЗЕРІ." : won ? "ДОЩ ТРИВАЄ. ВЕЖІ ЗРОСТАЮТЬ." : "НЕ КОЖНІ ОБІЙМИ ВАРТО ПРИЙМАТИ.",
     );
   }
 

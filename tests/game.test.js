@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RainGame, LANES, PLAYER_Y, HUNTER_REACH, INTRO_DURATION, gradeRun, levelConfig, generateLevel, parseSave } from '../src/game.js';
+import { RainGame, LANES, PLAYER_Y, HUNTER_REACH, INTRO_DURATION, gradeRun, levelConfig, generateLevel, parseSave, dailyChallenge } from '../src/game.js';
 
 const step = (game, seconds) => {
   for (let i = 0; i < Math.ceil(seconds / 0.02); i++) game.update(0.02);
@@ -297,7 +297,7 @@ test('landing completes level, awards bonus, saves record and unlocks next tower
 });
 
 test('storage tolerates malformed and impossible values without breaking startup', () => {
-  assert.deepEqual(parseSave('invalid'), { bestScore: 0, unlockedLevel: 1, muted: false, reducedMotion: false, impactMode: 'arcade', levelRecords: {} });
+  assert.deepEqual(parseSave('invalid'), { bestScore: 0, unlockedLevel: 1, muted: false, reducedMotion: false, impactMode: 'arcade', levelRecords: {}, dailyRecords: {} });
   assert.equal(parseSave('{"bestScore":-10,"unlockedLevel":0}').bestScore, 0);
   assert.equal(parseSave('{"unlockedLevel":0}').unlockedLevel, 1);
   assert.equal(parseSave('{"bestScore":125.9,"unlockedLevel":3,"muted":true}').bestScore, 125);
@@ -543,18 +543,289 @@ test('catch timing and replay preserve the selected style without running a land
   assert.equal(game.state.outcome, null);
 });
 
-test('reserved lanes remain traversable through hunters at every difficulty tier', () => {
+function playVisibleRoute(game, { risk = false, dt = 1 / 120 } = {}) {
+  const plans = new Map();
+  let previousGoal = 0;
+  let iterations = 0;
+  while (game.state.mode === 'playing' && iterations++ < 20000) {
+    const visible = game.state.hazards.filter(h => h.warning > 0 && h.at > game.state.distance - 0.85);
+    const rows = [...new Set(visible.map(h => h.at))].sort((a, b) => a - b);
+    for (const at of rows) {
+      if (plans.has(at)) continue;
+      const windows = visible.filter(h => h.at === at);
+      const available = LANES.filter(x => windows.every(h => Math.abs(x - h.baseX) >= 3));
+      available.sort((a, b) => Math.abs(a - previousGoal) - Math.abs(b - previousGoal));
+      const drop = risk && game.state.pickups.find(p => p.risk && p.at === at && p.y > -14);
+      const target = drop ? drop.x : available[0];
+      plans.set(at, { target, time: game.state.elapsed + 0.15 });
+      previousGoal = target;
+    }
+    const next = plans.get(rows[0]);
+    if (next && game.state.elapsed >= next.time) {
+      game.point(next.target);
+      game.slow(Math.abs(next.target - game.state.x) > (risk ? 1.25 : 1.5));
+    } else game.slow(false);
+    game.update(dt);
+  }
+}
+
+test('visible routes remain traversable with a 150 ms reaction delay and focus', () => {
   for (const level of [1, 3, 5, 10, 20]) {
-    for (let seed = 0; seed < 20; seed++) {
+    for (let seed = 0; seed < 8; seed++) {
       const game = new RainGame();
       game.start(level, seed, { skipIntro: true });
-      let iterations = 0;
-      while (game.state.mode === 'playing' && iterations++ < 15000) {
-        const wave = game.waves.find(w => w.at > game.state.distance - 0.85);
-        if (wave) game.point(LANES[wave.safeLane]);
-        game.update(1 / 120);
-      }
+      playVisibleRoute(game);
       assert.equal(game.state.outcome, 'win', `Reserved path failed: level ${level}, seed ${seed}, distance ${game.state.distance}`);
     }
   }
+});
+
+test('optional risk routes can be completed from visible cues with a 150 ms reaction delay', () => {
+  for (const level of [1, 3, 5, 10, 20]) {
+    for (let seed = 0; seed < 3; seed++) {
+      const game = new RainGame();
+      game.start(level, seed, { skipIntro: true });
+      const risks = game.state.pickups.filter(p => p.risk).length;
+      playVisibleRoute(game, { risk: true, dt: seed % 2 ? 1 / 60 : 1 / 120 });
+      assert.equal(game.state.outcome, 'win', `Risk route failed: level ${level}, seed ${seed}, distance ${game.state.distance}`);
+      assert.equal(game.state.riskDrops, risks, `Risk route missed a drop: level ${level}, seed ${seed}`);
+    }
+  }
+});
+
+test('near misses use only the shared vertical band rather than the exit position', () => {
+  const escaping = collisionFixture().game;
+  Object.assign(escaping.state, { distance: 1.65, x: 1.7, velocity: 11.5, speed: 20 });
+  escaping.move(1);
+  escaping.update(0.05);
+  assert.ok(escaping.state.x > 2.2);
+  assert.equal(escaping.state.nearMisses, 1, 'a real close pass survives moving away after the danger band');
+
+  const late = collisionFixture().game;
+  Object.assign(late.state, { distance: 1.65, x: 2.7, velocity: -11.5, speed: 20 });
+  late.move(-1);
+  late.update(0.05);
+  assert.ok(late.state.x < 2.2);
+  assert.equal(late.state.nearMisses, 0, 'moving closer after the danger band is not a close pass');
+});
+
+test('dash through a catch band does not earn a near miss and one wave earns only one credit', () => {
+  const dash = collisionFixture().game;
+  dash.state.x = -1.2;
+  dash.dash();
+  step(dash, 0.5);
+  assert.equal(dash.state.outcome, null);
+  assert.equal(dash.state.hazards[0].dashedThrough, true);
+  assert.equal(dash.state.nearMisses, 0);
+
+  const paired = collisionFixture().game;
+  paired.state.hazards = [-1.7, 1.7].map((x, index) => ({
+    ...paired.state.hazards[0], id: `pair-${index}`, x, baseX: x,
+  }));
+  step(paired, 0.5);
+  assert.ok(paired.state.hazards.every(h => h.passed));
+  assert.equal(paired.state.nearMisses, 1);
+});
+
+test('near and dash-through rewards agree at 20, 60 and 120 FPS', () => {
+  for (const fps of [20, 60, 120]) {
+    const near = collisionFixture().game;
+    near.state.x = 1.7;
+    for (let frame = 0; frame < fps / 2; frame++) near.update(1 / fps);
+    assert.equal(near.state.nearMisses, 1, `close pass at ${fps} FPS`);
+    const dash = collisionFixture().game;
+    dash.state.x = -1.2;
+    dash.dash();
+    for (let frame = 0; frame < fps / 2; frame++) dash.update(1 / fps);
+    assert.equal(dash.state.outcome, null);
+    assert.equal(dash.state.nearMisses, 0, `dash-through pass at ${fps} FPS`);
+  }
+});
+
+test('touch dash keeps its initial direction when it crosses the pointer target', () => {
+  const game = new RainGame();
+  game.start(1, 1, { skipIntro: true });
+  game.state.hazards = [];
+  game.state.pickups = [];
+  game.point(3);
+  game.dash();
+  assert.equal(game.state.dashDirection, 1);
+  let previous = game.state.x;
+  for (let i = 0; i < 6; i++) {
+    if (i === 3) game.point(-3);
+    game.update(0.05);
+    assert.ok(game.state.x >= previous, 'pointer changes cannot reverse an active dash');
+    previous = game.state.x;
+  }
+  assert.equal(game.state.dashDirection, 1);
+});
+
+test('first tower forces each stationary lane to confront a warned window', () => {
+  const layout = generateLevel(1, 42);
+  assert.deepEqual([...new Set(layout.waves.flatMap(w => w.blocked))].sort(), [0, 1, 2, 3, 4]);
+  for (const x of LANES) {
+    const game = new RainGame();
+    game.start(1, 42, { skipIntro: true });
+    game.point(x);
+    let warned = false;
+    let frames = 0;
+    while (game.state.mode === 'playing' && frames++ < 4000) {
+      if (game.state.hazards.some(h => h.baseX === x && h.warning > 0 && h.y < -4.5)) warned = true;
+      game.update(1 / 120);
+    }
+    assert.equal(game.state.outcome, 'caught', `stationary lane ${x} escaped the tutorial`);
+    assert.equal(warned, true);
+    assert.ok(game.state.caughtBy);
+  }
+});
+
+test('seeded wave phrases contain rest gaps on the facade grid and optional safe risk drops', () => {
+  for (const level of [2, 3, 5, 10, 20]) {
+    for (let seed = 0; seed < 40; seed++) {
+      const { config, hazards, pickups, waves } = generateLevel(level, seed);
+      assert.deepEqual([...new Set(waves.map(w => w.pattern))].sort(), ['hunter', 'rest', 'risk', 'weave']);
+      assert.ok(waves.some((wave, index) => index > 0 && wave.at - waves[index - 1].at === 20));
+      for (const [index, wave] of waves.entries()) {
+        assert.equal(wave.at % 10, 0);
+        if (index) assert.ok([10, 20].includes(wave.at - waves[index - 1].at));
+      }
+      const risks = pickups.filter(p => p.risk);
+      assert.ok(risks.length > 0);
+      for (const pickup of risks) {
+        const wave = waves.find(w => w.at === pickup.at);
+        assert.ok(Math.abs(pickup.x - LANES[wave.safeLane]) <= 1.25);
+        for (const hazard of hazards.filter(h => h.at === pickup.at)) {
+          const reach = hazard.type === 'sweep' ? 1.05 : hazard.type === 'hunter' ? HUNTER_REACH : 0;
+          const width = hazard.type === 'long' ? 1.06 : 0.85;
+          assert.ok(Math.abs(pickup.x - hazard.baseX) > reach + width + 0.5, 'risk pickup intersects another catch band');
+        }
+      }
+      if (level >= 10) assert.equal(config.height, 720);
+    }
+  }
+});
+
+test('late towers cap length and cycle district identity', () => {
+  assert.equal(levelConfig(10).floors, 72);
+  assert.equal(levelConfig(100).height, 720);
+  assert.equal(levelConfig(100).floors, 72);
+  assert.equal(levelConfig(6).levelName, levelConfig(1).levelName);
+  assert.equal(levelConfig(100).district, 4);
+  const game = new RainGame({ saved: { unlockedLevel: 10000 } });
+  game.start(10000, 1, { skipIntro: true });
+  game.finish('win');
+  assert.equal(game.state.unlockedLevel, 10000);
+});
+
+test('style uses opportunity shares and a constant combo contribution across tower sizes', () => {
+  const result = multiplier => {
+    const game = new RainGame();
+    game.start(1, 1, { skipIntro: true });
+    game.styleOpportunities = { nearOpportunities: 14 * multiplier, riskOpportunities: 4 * multiplier, dropOpportunities: 10 * multiplier };
+    Object.assign(game.state, { nearMisses: 7 * multiplier, riskDrops: 2 * multiplier, drops: 7 * multiplier, bestCombo: 9 });
+    game.finish('win');
+    return game.state.lastResult;
+  };
+  const short = result(1);
+  const long = result(3);
+  assert.equal(short.grade, 'A');
+  assert.equal(short.style.value, long.style.value);
+  assert.equal(short.grade, long.grade);
+  assert.equal(gradeRun({ nearMisses: 7, riskDrops: 2, drops: 7, bestCombo: 9 }, {
+    nearOpportunities: 14, riskOpportunities: 4, dropOpportunities: 10,
+  }), 'A');
+  assert.equal(short.style.nextGrade, 'S');
+  assert.ok(short.style.nearNeeded > 0 && short.style.nearNeeded <= 7);
+  assert.match(short.style.goal, /До S/);
+});
+
+test('focus preserves combo rhythm and exposes its exhaustion and remaining time', () => {
+  const game = collisionFixture().game;
+  game.state.x = 1.7;
+  step(game, 0.5);
+  game.state.hazards = [];
+  const before = game.state.comboRemaining;
+  game.slow(true);
+  step(game, 0.5);
+  assert.ok(before - game.state.comboRemaining < 0.21);
+  game.state.focus = 0.02;
+  game.update(0.02);
+  assert.equal(game.state.focusExhausted, true);
+  game.slow(false);
+  assert.equal(game.state.focusExhausted, false);
+});
+
+test('catch and hunter cues expose their concrete window and progress', () => {
+  const details = [];
+  const game = new RainGame({ onEvent: (name, detail) => details.push({ name, detail }) });
+  game.start(1, 7, { skipIntro: true });
+  game.state.hazards = collisionFixture().game.state.hazards;
+  game.state.pickups = [];
+  step(game, 0.2);
+  assert.deepEqual(game.state.lastResult.caughtBy, { id: 'test', type: 'grab', x: 0, at: 1 });
+  assert.equal(game.state.lastResult.progress, game.state.distance / game.state.height);
+  assert.deepEqual(details.find(e => e.name === 'catch').detail, game.state.caughtBy);
+  const hunterGame = hunterFixture().game;
+  hunterGame.onEvent = (name, detail) => details.push({ name, detail });
+  step(hunterGame, 1);
+  for (const name of ['tracking', 'lock']) {
+    const cue = details.find(e => e.name === name).detail;
+    assert.equal(cue.type, 'hunter');
+    assert.equal(cue.id, 'hunter-test');
+    assert.ok(Number.isFinite(cue.x));
+  }
+});
+
+test('daily challenge is deterministic in Kyiv time and records stay isolated from tower progress', () => {
+  const a = dailyChallenge(new Date('2026-10-23T21:30:00Z'));
+  const b = dailyChallenge(new Date('2026-10-24T20:30:00Z'));
+  assert.deepEqual(a, b);
+  assert.equal(a.date, '2026-10-24');
+  assert.equal(a.level, 3);
+  assert.notEqual(a.seed, dailyChallenge(new Date('2026-10-24T21:30:00Z')).seed);
+  assert.equal(dailyChallenge(new Date('2026-10-25T22:30:00Z')).date, '2026-10-26');
+  let saved;
+  const game = new RainGame({ saved: { bestScore: 25, unlockedLevel: 1, levelRecords: { '1': { score: 25, grade: 'C' } } },
+    onEvent: name => { if (name === 'save') saved = structuredClone(game.state.dailyRecords); } });
+  game.start(a.level, a.seed, { skipIntro: true, dailyDate: a.date });
+  const firstLayout = structuredClone(game.state.hazards);
+  game.addScore(1200);
+  game.finish('win');
+  assert.equal(game.state.unlockedLevel, 1);
+  assert.equal(game.state.bestScore, 25);
+  assert.deepEqual(game.state.levelRecords, { '1': { score: 25, grade: 'C' } });
+  assert.equal(game.state.lastResult.newDailyBest, true);
+  assert.equal(game.state.lastResult.dailyDate, a.date);
+  assert.equal(saved[a.date].score, game.state.lastResult.dailyScore);
+  const record = structuredClone(saved);
+  game.start(a.level, a.seed, { skipIntro: true, dailyDate: a.date });
+  assert.deepEqual(game.state.hazards, firstLayout);
+  game.finish('caught');
+  assert.deepEqual(game.state.dailyRecords, record);
+  game.menu();
+  assert.equal(game.state.dailyDate, null);
+  game.start(1, 4, { skipIntro: true });
+  game.finish('win');
+  assert.equal(game.state.unlockedLevel, 2);
+  assert.deepEqual(game.state.dailyRecords, record);
+});
+
+test('daily saves reject invalid dates and bound stored scores and record count', () => {
+  const dailyRecords = {
+    '2026-02-30': { score: 20, grade: 'S' }, '__proto__': { score: 10 },
+    '2026-10-24': { score: 125.9, grade: 'A' }, '2026-10-25': { score: -5, grade: 'bad' },
+    '2026-10-26': { score: '900', grade: 'S' },
+  };
+  assert.deepEqual(parseSave(JSON.stringify({ dailyRecords })).dailyRecords, {
+    '2026-10-25': { score: 0, grade: null }, '2026-10-24': { score: 125, grade: 'A' },
+  });
+  const many = {};
+  for (let day = 0; day < 500; day++) {
+    const date = new Date(Date.UTC(2025, 0, 1 + day)).toISOString().slice(0, 10);
+    many[date] = { score: 1e12, grade: 'B' };
+  }
+  const bounded = parseSave(JSON.stringify({ dailyRecords: many })).dailyRecords;
+  assert.equal(Object.keys(bounded).length, 366);
+  assert.equal(bounded['2025-01-01'], undefined);
+  assert.ok(Object.values(bounded).every(record => record.score === 999999999));
 });

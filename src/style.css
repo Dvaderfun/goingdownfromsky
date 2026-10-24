@@ -429,11 +429,63 @@ kbd {
   color: var(--muted);
   max-width: 245px;
 }
-.landing-style {
+.menu-options {
   position: absolute;
   left: 35%;
   bottom: 14%;
   width: 270px;
+}
+.daily-challenge {
+  margin-bottom: 24px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.daily-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  width: 100%;
+  padding: 0;
+  text-align: left;
+  background: transparent;
+  color: var(--acid);
+}
+.daily-button strong {
+  display: block;
+  font-size: 20px;
+  letter-spacing: -0.6px;
+}
+.daily-button > span > span {
+  display: block;
+  margin-top: 5px;
+  font: 10px var(--mono);
+  color: var(--muted);
+}
+.daily-arrow {
+  font-size: 28px;
+}
+.daily-button:hover .daily-arrow {
+  color: var(--cream);
+}
+.daily-description {
+  margin: 12px 0 7px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.daily-record {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  font: 9px var(--mono);
+  line-height: 1.6;
+  color: var(--muted);
+}
+.daily-record strong {
+  color: var(--cream);
+  font-weight: 500;
 }
 .landing-style-label {
   margin: 0 0 8px;
@@ -883,6 +935,41 @@ kbd {
   color: var(--muted);
   margin-top: 8px;
 }
+.focus-ability.is-exhausted .ability-state {
+  color: var(--coral);
+}
+.combo-readout {
+  position: absolute;
+  top: 113px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 10px var(--mono);
+  color: var(--muted);
+  padding: 7px 10px;
+  background: rgba(21, 18, 37, 0.65);
+}
+.combo-readout strong {
+  font-size: 16px;
+  color: var(--cream);
+  font-weight: 500;
+}
+.combo-readout.has-combo strong {
+  color: var(--acid);
+}
+.combo-track {
+  width: 36px;
+  height: 3px;
+  background: var(--line);
+}
+.combo-track > span {
+  display: block;
+  height: 100%;
+  background: var(--acid);
+  transform-origin: left;
+}
 .flight-status {
   position: absolute;
   bottom: 111px;
@@ -1099,6 +1186,43 @@ kbd {
 }
 .result-impact-mode[data-impact-mode="hard"] {
   color: var(--coral);
+}
+.caught-feedback {
+  margin-top: 20px;
+  padding: 14px 16px;
+  border-left: 2px solid var(--coral);
+  background: rgba(255, 162, 139, 0.05);
+}
+.caught-feedback > p:first-child {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0 0 9px;
+  font: 10px var(--mono);
+  color: var(--muted);
+}
+.caught-feedback strong {
+  color: var(--coral);
+  font-size: 24px;
+}
+.caught-type {
+  margin-left: auto;
+  color: var(--cream);
+}
+.caught-feedback > p:last-child {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--cream);
+}
+.result-goal {
+  padding-left: 14px;
+  border-left: 2px solid var(--acid);
+  color: var(--cream);
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 18px 0 0;
 }
 .result-performance {
   display: flex;
@@ -1373,7 +1497,7 @@ kbd {
   }
 }
 @media (max-width: 1100px) and (min-width: 761px) {
-  .landing-style {
+  .menu-options {
     left: calc(4.45% + 370px);
   }
   .scene-caption {
@@ -1596,7 +1720,7 @@ kbd {
   .scene-caption {
     display: none;
   }
-  .landing-style {
+  .menu-options {
     left: 24px;
     right: 24px;
     bottom: 65px;
@@ -1746,13 +1870,6 @@ kbd {
     text-align: center;
     white-space: nowrap;
     height: 8px;
-  }
-  .focus-ability.is-active .ability-state {
-    font-size: 0;
-  }
-  .focus-ability.is-active .ability-state:after {
-    content: "АКТИВНИЙ";
-    font-size: 6px;
   }
   .touch-movement {
     display: flex;
@@ -2203,6 +2320,286 @@ kbd {
   .how-to {
     margin-top: 20px;
     padding-top: 14px;
+  }
+}
+#ui[data-controls="touch"] .how-to,
+#ui[data-controls="touch"] .ability-top kbd,
+#ui[data-controls="touch"] .intro-skip kbd {
+  display: none;
+}
+#ui[data-controls="touch"] .touch-instruction {
+  display: block;
+}
+.micro-label,
+.ability-top,
+.ability-state,
+.flight-status,
+.game-help,
+.result-level,
+.result-impact-mode,
+.result-footnote {
+  font-size: 10px;
+}
+.ability-state {
+  color: #c7c0d4;
+}
+.ability-top kbd {
+  font-size: 9px;
+}
+.landing-style-label {
+  font-size: 10px;
+}
+.landing-style-description {
+  font-size: 11px;
+}
+.result-stats dt,
+.result-tower-record {
+  font-size: 10px;
+}
+.grade-description > span {
+  font-size: 9px;
+}
+.grade-badge > span {
+  font-size: 10px;
+}
+@media (max-width: 760px) {
+  .menu-screen {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 109px 24px max(16px, env(safe-area-inset-bottom));
+    pointer-events: auto;
+    scrollbar-width: thin;
+  }
+  #ui[data-mode="menu"] .masthead {
+    background: rgba(21, 18, 37, 0.94);
+  }
+  #ui[data-mode="menu"] .city-strip {
+    display: none;
+  }
+  .utilities {
+    gap: 8px;
+  }
+  .utility-button {
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 9px 0;
+  }
+  .hero-copy {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    margin: 0;
+  }
+  .hero-title {
+    font-size: 100px;
+    margin: 20px 0;
+  }
+  .title-slash {
+    font-size: 100px;
+  }
+  .hero-description {
+    font-size: 16px;
+    margin-bottom: 20px;
+  }
+  .objective-line {
+    font-size: 10px;
+  }
+  .touch-instruction {
+    max-width: none;
+    margin: 15px 0 0;
+    padding-top: 12px;
+    font-size: 11px;
+    line-height: 1.6;
+    border-top: 1px solid var(--line);
+  }
+  .menu-options {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    margin-top: 18px;
+  }
+  .daily-challenge {
+    margin-bottom: 14px;
+    padding-bottom: 14px;
+  }
+  .daily-button strong {
+    font-size: 18px;
+  }
+  .daily-description {
+    margin: 7px 0 6px;
+  }
+  .landing-style {
+    position: static;
+    width: 100%;
+  }
+  .landing-style-label {
+    margin-bottom: 7px;
+  }
+  .landing-style-description {
+    margin-top: 7px;
+  }
+  .menu-record {
+    top: 88px;
+  }
+  .menu-record > span:last-child {
+    font-size: 8px;
+  }
+  .menu-record strong {
+    font-size: 17px;
+  }
+  .hud-readout {
+    left: 20px;
+    right: 20px;
+    gap: 11px;
+  }
+  .level-readout strong {
+    max-width: 125px;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  .micro-label {
+    font-size: 10px;
+    letter-spacing: 0.3px;
+  }
+  .floor-unit {
+    font-size: 10px;
+    letter-spacing: 0;
+  }
+  .hud-divider {
+    display: none;
+  }
+  .combo-readout {
+    top: 163px;
+    left: 20px;
+    transform: none;
+    gap: 7px;
+    padding: 6px 8px;
+  }
+  .combo-readout strong {
+    font-size: 14px;
+  }
+  .combo-track {
+    width: 30px;
+  }
+  .ability-controls {
+    right: 20px;
+    bottom: max(64px, calc(env(safe-area-inset-bottom) + 55px));
+    gap: 8px;
+  }
+  .ability-button {
+    width: 76px;
+    min-height: 90px;
+    padding: 10px 8px;
+  }
+  .ability-top {
+    font-size: 10px;
+    letter-spacing: 0.3px;
+    gap: 6px;
+  }
+  .ability-state {
+    font-size: 10px;
+    height: 12px;
+    letter-spacing: 0;
+    line-height: 1.2;
+  }
+  .touch-movement {
+    left: 20px;
+    bottom: max(64px, calc(env(safe-area-inset-bottom) + 55px));
+    gap: 8px;
+  }
+  .touch-direction {
+    width: 52px;
+    height: 90px;
+  }
+  .flight-status {
+    left: 20px;
+    bottom: 173px;
+    font-size: 10px;
+    letter-spacing: 0.2px;
+  }
+  .tutorial-hint {
+    left: 20px;
+    right: 58px;
+    bottom: 212px;
+    font-size: 11px;
+    line-height: 1.6;
+  }
+  .descent-meter {
+    right: 15px;
+    width: 37px;
+    font-size: 9px;
+    letter-spacing: 0;
+  }
+  .descent-percent {
+    font-size: 11px;
+  }
+  .combo-flash > span {
+    font-size: 9px;
+    letter-spacing: 0.4px;
+  }
+  .intro-caption > p:last-child,
+  .intro-eyebrow {
+    font-size: 11px;
+  }
+  .result-topline .eyebrow {
+    font-size: 9px;
+    letter-spacing: 0.2px;
+  }
+  .result-level {
+    font-size: 9px;
+    letter-spacing: 0;
+    white-space: normal;
+    text-align: right;
+    max-width: 145px;
+  }
+  .result-description,
+  .caught-feedback > p:last-child,
+  .result-goal {
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  .caught-feedback {
+    padding: 12px;
+  }
+  .caught-type {
+    flex-basis: 100%;
+    margin-left: 0;
+    font-size: 11px;
+  }
+  .result-actions .primary-button,
+  .result-actions .secondary-button {
+    min-height: 56px;
+  }
+  .result-menu {
+    min-height: 44px;
+    font-size: 12px;
+  }
+  .result-footnote {
+    font-size: 9px;
+    letter-spacing: 0.2px;
+  }
+  .toast-message {
+    font-size: 10px;
+  }
+}
+@media (max-width: 760px) and (max-height: 760px) {
+  .menu-screen {
+    padding-top: 106px;
+  }
+  .hero-title {
+    font-size: 83px;
+    margin: 15px 0;
+  }
+  .title-slash {
+    font-size: 83px;
+  }
+  .hero-description {
+    font-size: 15px;
+    margin-bottom: 16px;
+  }
+  .menu-options {
+    margin-top: 18px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -11,6 +11,14 @@ const PALETTE = {
   yellow: 0xe8ff64, butter: 0xfff7a6, coral: 0xff836e, pink: 0xff63a6,
   lilac: 0xbfa1ff, cyan: 0x9ee9dd, skin: 0xf5a88c, hair: 0x211c32,
 };
+const DISTRICTS = [
+  { wall: 0x423552, side: 0x2a233a, edge: 0x83718b, fog: 0x302840, sky: 0x252339, warm: 0xffb36e, cool: 0x859bd1, sign: 0xff8baa, text: 'ТИХО', sleeve: 0x7568a1, longSleeve: 0xb6888b, hunterSleeve: 0x426f71 },
+  { wall: 0x603e4a, side: 0x352532, edge: 0xa77d82, fog: 0x422c3b, sky: 0x281d32, warm: 0xffaa75, cool: 0xc392df, sign: 0xff957c, text: 'ЧУЖІ', sleeve: 0x986273, longSleeve: 0xb49b6d, hunterSleeve: 0x507c76 },
+  { wall: 0x2d4d57, side: 0x20343f, edge: 0x799b9e, fog: 0x263c45, sky: 0x192b38, warm: 0xffd7a0, cool: 0x79d9d0, sign: 0x9ee9dd, text: 'ДУЄ', sleeve: 0x628e99, longSleeve: 0xb3977c, hunterSleeve: 0x568c70 },
+  { wall: 0x33354f, side: 0x24253d, edge: 0x80799b, fog: 0x292b43, sky: 0x1d2138, warm: 0xffb878, cool: 0xa49bed, sign: 0xff63a6, text: 'НЕ СПИ', sleeve: 0x84739f, longSleeve: 0xb47a8e, hunterSleeve: 0x477e83 },
+  { wall: 0x5c5d73, side: 0x383d54, edge: 0xaca8be, fog: 0x3c465b, sky: 0x2b3b51, warm: 0xffe4b8, cool: 0xb4dfea, sign: 0xc6f2ed, text: 'ХМАРИ', sleeve: 0x999ab6, longSleeve: 0xc3a798, hunterSleeve: 0x62908c },
+];
+const RESIDENT_WIDTHS = [1, 1.08, 0.97, 1.12, 1.02];
 const COLUMNS = [-6, -3, 0, 3, 6];
 const ROWS = 13;
 const HAZARD_POOL = 24;
@@ -65,6 +73,8 @@ export class RainScene {
     this.displayTime = 0;
     this.lastDistance = 0;
     this.landingX = 0;
+    this.district = -1;
+    this.captureHighlight = null;
     this.introPose = {
       active: false, time: 0, stage: 'complete', roofSurfaceY: -0.275, roofEdgeZ: 2.8,
       feet: [new THREE.Vector3(), new THREE.Vector3()], grounded: false, playerPosition: new THREE.Vector3(),
@@ -121,6 +131,7 @@ export class RainScene {
     this.composer.addPass(this.finish);
     this.composer.addPass(new OutputPass());
     this.resize();
+    this.updateDistrict({ district: 0 });
   }
 
   keep(resource) {
@@ -163,18 +174,18 @@ export class RainScene {
     this.keyLight.shadow.bias = -0.001;
     this.keyLight.shadow.normalBias = 0.035;
     this.scene.add(this.keyLight);
-    const rim = new THREE.DirectionalLight(0xa79aff, 2.1);
-    rim.position.set(13, 5, -5);
-    this.scene.add(rim);
+    this.rimLight = new THREE.DirectionalLight(0xa79aff, 2.1);
+    this.rimLight.position.set(13, 5, -5);
+    this.scene.add(this.rimLight);
     this.playerLight = new THREE.PointLight(PALETTE.yellow, 3, 7, 1.8);
     this.playerLight.position.set(0, 2, 5);
     this.scene.add(this.playerLight);
-    const facadeLight = new THREE.PointLight(PALETTE.coral, 80, 36, 2);
-    facadeLight.position.set(11, 9, 7);
-    this.scene.add(facadeLight);
-    const blue = new THREE.PointLight(0x8283f8, 100, 38, 2);
-    blue.position.set(-12, -7, 8);
-    this.scene.add(blue);
+    this.facadeLight = new THREE.PointLight(PALETTE.coral, 80, 36, 2);
+    this.facadeLight.position.set(11, 9, 7);
+    this.scene.add(this.facadeLight);
+    this.sideLight = new THREE.PointLight(0x8283f8, 100, 38, 2);
+    this.sideLight.position.set(-12, -7, 8);
+    this.scene.add(this.sideLight);
   }
 
   createSky() {
@@ -186,6 +197,7 @@ export class RainScene {
         void main(){ float h = smoothstep(-60.0,90.0,vPosition.y); vec3 c = mix(bottomColor, topColor, h);
         float glow = exp(-length(vPosition.xy - vec2(35.0,12.0)) * 0.015); c += vec3(0.10,0.025,0.075)*glow; gl_FragColor=vec4(c,1.0); }`,
     }));
+    this.skyMaterial = shader;
     this.mesh(this.scene, this.keep(new THREE.SphereGeometry(140, 24, 16)), shader);
     const moon = this.mesh(this.scene, 'sphere', this.basic('moon', 0xf3dab4), [-38, 28, -85], [5.3, 5.3, 1]);
     moon.renderOrder = -1;
@@ -267,16 +279,17 @@ export class RainScene {
       this.mesh(this.neighbor, 'plane', this.basic('neighbor-lit', 0xcf9aad, 0.34), [-0.8, i * 5.5 + 1.8, 4.55], [0.85, 2.2, 1]);
       this.mesh(this.neighbor, 'plane', this.basic('neighbor-lit-two', 0xf0d29a, 0.17), [1.2, i * 5.5 + 1.8, 4.55], [0.85, 2.2, 1]);
     }
-    this.createSign(this.neighbor, 'HOTEL\nPLUIE', 3.7, 14, 5.2, 1.8, 6.8, PALETTE.pink);
+    this.districtSign = this.createSign(this.neighbor, DISTRICTS[0].text, 3.7, 14, 5.2, 1.8, 6.8, DISTRICTS[0].sign);
+    this.districtSignTextures = [this.districtSign.material.map, ...DISTRICTS.slice(1).map(district => this.createSignTexture(district.text))];
   }
 
-  createSign(parent, text, x, y, z, width, height, color) {
+  createSignTexture(text) {
     const canvas = document.createElement('canvas');
     canvas.width = 256;
     canvas.height = 768;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = `#${new THREE.Color(color).getHexString()}`;
+    ctx.strokeStyle = '#ffffff';
     ctx.fillStyle = ctx.strokeStyle;
     ctx.lineWidth = 3;
     ctx.strokeRect(13, 13, 230, 742);
@@ -288,12 +301,44 @@ export class RainScene {
     letters.forEach((letter, i) => ctx.fillText(letter, 128, 70 + i * lineHeight));
     const texture = this.keep(new THREE.CanvasTexture(canvas));
     texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }
+
+  createSign(parent, text, x, y, z, width, height, color) {
+    const texture = this.createSignTexture(text);
     const background = this.mesh(parent, 'box', this.material('sign-backing', { color: 0x231b35, metalness: 0.4 }), [x, y, z - 0.11], [width + 0.18, height + 0.18, 0.2]);
     background.castShadow = true;
-    const material = this.keep(new THREE.MeshBasicMaterial({ map: texture, transparent: true, toneMapped: false, depthWrite: false }));
+    const material = this.keep(new THREE.MeshBasicMaterial({ map: texture, color, transparent: true, toneMapped: false, depthWrite: false }));
     const sign = this.mesh(parent, 'plane', material, [x, y, z + 0.02], [width, height, 1]);
     this.mesh(parent, 'box', this.material('sign-bracket', { color: PALETTE.edge }), [x - width / 2, y, z - 0.7], [0.15, 0.14, 1.5]);
     return sign;
+  }
+
+  updateDistrict(state) {
+    const fallback = (Math.max(1, Math.floor(finite(state.level, 1))) - 1) % DISTRICTS.length;
+    const district = clamp(Math.floor(finite(state.district, fallback)), 0, DISTRICTS.length - 1);
+    if (this.district === district) return;
+    this.district = district;
+    const palette = this.districtPalette = DISTRICTS[district];
+    for (const [name, color] of [
+      ['wall', palette.wall], ['wall-edge', palette.side], ['facade-pilaster', palette.wall],
+      ['floor-band', palette.wall], ['window-frame', palette.edge], ['window-sill', palette.edge],
+      ['occupied-window-jamb', palette.edge], ['occupied-window-interior', palette.side],
+      ['curtain', palette.wall], ['neighbor', palette.side], ['neighbor-ledges', palette.wall],
+      ['hand-sleeve', palette.sleeve], ['long-sleeve', palette.longSleeve], ['hunter-sleeve', palette.hunterSleeve],
+      ['window-person-hat', palette.sleeve], ['window-person-scarf', palette.edge],
+    ]) this.materials.get(name).color.set(color);
+    this.materials.get('occupied-window-interior').emissive.set(palette.wall);
+    this.scene.fog.color.set(palette.fog);
+    this.renderer.setClearColor(palette.sky, 1);
+    this.skyMaterial.uniforms.topColor.value.set(palette.sky);
+    this.skyMaterial.uniforms.bottomColor.value.set(palette.fog);
+    this.rimLight.color.set(palette.cool);
+    this.facadeLight.color.set(palette.sign);
+    this.sideLight.color.set(palette.cool);
+    this.districtSign.material.map = this.districtSignTextures[district];
+    this.districtSign.material.color.set(palette.sign);
+    this.lastArchitectureRow = NaN;
   }
 
   architecturePart(geometry, material, count, specification) {
@@ -393,6 +438,7 @@ export class RainScene {
   }
 
   updateBuilding(state) {
+    const palette = this.districtPalette;
     const distance = state.mode === 'menu' ? 24 + Math.sin(this.displayTime * 0.12) * 0.18 : state.distance || 0;
     const offset = distance % 10;
     const absoluteRow = Math.floor(distance / 10);
@@ -421,9 +467,9 @@ export class RainScene {
             const lit = random(seed) > 0.4;
             const warm = random(seed + 12) > 0.26;
             if (part.mesh === this.windowGlowInstances) {
-              this.instanceColor.set(lit ? (warm ? 0xffb36e : 0x859bd1) : 0x292535);
+              this.instanceColor.set(lit ? (warm ? palette.warm : palette.cool) : palette.side);
               this.instanceColor.multiplyScalar(lit ? 0.75 + random(seed + 9) * 0.4 : 0.22);
-            } else this.instanceColor.set(lit ? (warm ? 0xcfa585 : 0x9f9ccb) : 0x303345);
+            } else this.instanceColor.set(lit ? (warm ? palette.warm : palette.cool) : palette.side);
             part.mesh.setColorAt(index, this.instanceColor);
           }
         }
@@ -747,6 +793,8 @@ export class RainScene {
     const jamb = this.material('occupied-window-jamb', { color: 0x786b83, roughness: 0.65, metalness: 0.22 });
     const cuff = this.material('hand-cuff', { color: 0xbba2cb, roughness: 0.84 });
     const hunterCuff = this.material('hunter-cuff', { color: PALETTE.coral, emissive: 0x6f271c, emissiveIntensity: 0.18 });
+    const hatMaterial = this.material('window-person-hat', { color: 0x7568a1, roughness: 0.92 });
+    const scarfMaterial = this.material('window-person-scarf', { color: 0xbba2cb, roughness: 0.85 });
     const torsoGeometry = this.keep(new THREE.CylinderGeometry(0.55, 0.45, 1.42, 12));
     const reticleGeometry = this.keep(new THREE.BufferGeometry());
     // Four open corners are a target cue, distinct from a collectible ring.
@@ -791,7 +839,7 @@ export class RainScene {
       head.position.set(0, 0.99, 0.44);
       person.add(head);
       this.mesh(head, 'sphere', skin, [0, 0, 0], [0.255, 0.35, 0.205]);
-      this.mesh(head, 'sphere', hair, [0, 0.17, -0.035], [0.272, 0.235, 0.213]);
+      const hairCrown = this.mesh(head, 'sphere', hair, [0, 0.17, -0.035], [0.272, 0.235, 0.213]);
       this.mesh(head, 'sphere', hair, [-0.10, 0.23, 0.10], [0.18, 0.09, 0.14]).rotation.z = 0.24;
       for (const side of [-1, 1]) {
         this.mesh(head, 'sphere', skin, [side * 0.245, -0.015, 0], [0.048, 0.083, 0.05]);
@@ -801,6 +849,10 @@ export class RainScene {
       }
       this.mesh(head, 'sphere', skin, [0, -0.044, 0.214], [0.047, 0.070, 0.055]);
       this.mesh(head, 'box', features, [0, -0.157, 0.18], [0.065, 0.012, 0.012]);
+      const headwear = this.mesh(head, 'sphere', hatMaterial, [0, 0.23, -0.035], [0.30, 0.20, 0.23]);
+      const brim = this.mesh(head, 'box', hatMaterial, [0, 0.16, 0.13], [0.61, 0.045, 0.32]);
+      const sideHair = [-1, 1].map(side => this.mesh(head, 'sphere', hair, [side * 0.24, -0.035, -0.01], [0.10, 0.30, 0.18]));
+      const scarf = this.mesh(person, 'sphere', scarfMaterial, [0, 0.38, 0.56], [0.34, 0.12, 0.21]);
 
       const arms = [];
       for (const side of [-1, 1]) {
@@ -852,7 +904,7 @@ export class RainScene {
       const target = new THREE.LineSegments(reticleGeometry, targetMaterial);
       target.visible = false;
       group.add(target);
-      this.hands.push({ group, person, opening, torso, waist, seam, collar, neck, head, arms, catchCenter: new THREE.Vector3(),
+      this.hands.push({ group, person, opening, torso, waist, seam, collar, neck, head, hairCrown, headwear, brim, sideHair, scarf, arms, caught: false, catchCenter: new THREE.Vector3(),
         warning, warningMaterial, halo, light, hazardMarker, target, targetMaterial, sleeve, longSleeve, hunterSleeve, hunterCuff });
     }
     this.menuHands = [
@@ -872,6 +924,8 @@ export class RainScene {
   }
 
   updateHands(state) {
+    this.captureHighlight = state.mode === 'caught' ? state.caughtBy?.id ?? null : null;
+    for (const hand of this.hands) hand.caught = false;
     if (inIntro(state)) {
       for (const hand of this.hands) hand.group.visible = false;
       return;
@@ -892,6 +946,7 @@ export class RainScene {
       if (hazard.y > 33 || hazard.y < -39 || hazard.warning <= 0 && !hazard.active) continue;
       const hand = this.hands[slot++];
       hand.group.visible = true;
+      hand.caught = this.captureHighlight !== null && hazard.id === this.captureHighlight;
       hand.person.position.set(hazard.baseX, hazard.y, 0);
       hand.opening.position.set(hazard.baseX, hazard.y, 0);
       hand.catchCenter.set(hazard.x, hazard.y, 3);
@@ -914,6 +969,14 @@ export class RainScene {
       hand.neck.position.z = 0.44 + extension * 0.12;
       hand.head.position.z = 0.44 + extension * 0.12;
       hand.head.rotation.set(-0.05 - extension * 0.08, clamp((hazard.x - hazard.baseX) * 0.18, -0.28, 0.28), 0);
+      hand.torso.scale.x = RESIDENT_WIDTHS[this.district];
+      hand.head.scale.set(1 + (this.district === 2 ? 0.06 : 0), this.district === 4 ? 1.08 : 1, 1);
+      hand.hairCrown.scale.set(this.district === 2 ? 0.30 : 0.272, this.district === 4 ? 0.29 : 0.235, 0.213);
+      hand.headwear.visible = this.district === 1 || this.district === 3;
+      hand.brim.visible = this.district === 1;
+      for (const hair of hand.sideHair) hair.visible = this.district === 2;
+      hand.scarf.visible = this.district === 2 || this.district === 4;
+      hand.scarf.position.z = 0.56 + extension * 0.10;
       // Both hands belong to this resident. Their active midpoint is the
       // actual gameplay catch center; neither hand is an invisible proxy.
       const centerX = (hazard.x - hazard.baseX) * extension;
@@ -963,6 +1026,26 @@ export class RainScene {
       hand.target.scale.setScalar(locked ? 1 : 0.88 + (1 - pulse) * 0.08);
       hand.targetMaterial.color.set(locked ? PALETTE.coral : PALETTE.cyan);
       hand.targetMaterial.opacity = locked ? 0.94 : amount * 0.57;
+      if (this.captureHighlight !== null) {
+        if (hand.caught) {
+          const fade = 1 - smooth(clamp(this.modeTime / 0.85, 0, 1));
+          hand.warningMaterial.color.set(PALETTE.coral);
+          hand.warningMaterial.opacity = 0.45 + fade * 0.45;
+          hand.warning.scale.set(0.79 + fade * 0.035, 1.50 + fade * 0.035, 1);
+          hand.halo.material.color.set(PALETTE.coral);
+          hand.halo.material.opacity = 0.09 + fade * 0.12;
+          hand.target.visible = fade > 0;
+          hand.target.position.set(hazard.baseX, hazard.y, 0.88);
+          hand.target.scale.set(1.55 + fade * 0.05, 2.75 + fade * 0.05, 1);
+          hand.targetMaterial.color.set(PALETTE.coral);
+          hand.targetMaterial.opacity = fade * 0.9;
+        } else {
+          hand.warningMaterial.opacity *= 0.18;
+          hand.halo.material.opacity *= 0.18;
+          hand.hazardMarker.visible = false;
+          hand.target.visible = false;
+        }
+      }
     }
     for (; slot < this.hands.length; slot++) this.hands[slot].group.visible = false;
   }
@@ -1441,6 +1524,7 @@ export class RainScene {
   update(state, dt) {
     if (this.disposed) return;
     dt = Math.min(Math.max(finite(dt), 0), 0.05);
+    this.updateDistrict(state);
     if (finite(state.distance) < this.lastDistance || (state.mode === 'playing' && !['playing', 'paused'].includes(this.mode))) {
       for (const particle of this.trail) particle.userData.age = 1;
       this.trailClock = 0;
@@ -1459,7 +1543,7 @@ export class RainScene {
     const menu = state.mode === 'menu';
     const menuOffset = this.aspect > 1.05 ? -8.8 : -1.1;
     this.cameraOffset = inIntro(state) ? 0 : THREE.MathUtils.damp(this.cameraOffset, menu ? menuOffset : 0, state.reducedMotion ? 20 : 5.2, paused ? 0 : dt);
-    const shake = state.reducedMotion ? 0 : (state.shake || 0) * 0.08;
+    const shake = state.reducedMotion || state.mode === 'caught' || state.mode === 'result' && state.outcome === 'caught' ? 0 : (state.shake || 0) * 0.08;
     this.camera.position.set(this.cameraOffset + Math.sin(this.displayTime * 59) * shake, 4.2 + Math.cos(this.displayTime * 63) * shake, this.cameraZ);
     this.camera.lookAt(this.cameraOffset, 1.2, 3);
     this.camera.updateMatrixWorld();

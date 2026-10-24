@@ -28,4 +28,6 @@ npm run test:pages -- https://dvaderfun.github.io/goingdownfromsky/
 
 ## Публікація 0.4.0 — 24.10.2026
 
+Ітерація 06 / 0.5.0 підготовлена локально: 57 Node-тестів, production build, повний browser із 190 render-сценаріями та локальний test:pages пройшли, включно з «Дощем дня» під Pages prefix. Її публікацію ще не виконано; live версія лишається 0.4.0. Після публікації повторити live `test:pages` за процедурою вище.
+
 Опубліковано commit ab9c20c3a65ad3547bacda4dc4a02740d7bd50a7. Pages run 40092018040 завершив build/deploy з success. 40 Node-тестів, 178 render-станів, build, серійний browser і local/live Pages перевірки пройшли. На живій основній URL видно новий rooftop intro, pause/skip і незмінний archive 0.2.1; WebGL, JS/CSS/fonts/favicon та керування працюють без помилок. Live звіт — artifacts/pages-report.json.

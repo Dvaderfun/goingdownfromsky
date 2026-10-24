@@ -68,6 +68,7 @@ try {
       game.start(5, 1234567, { skipIntro: true });
       const authored = new RainGame();
       const authoredSnapshots = new Map();
+      const districtColors = new Set();
       const lastActivePalms = new Map();
       let impactStartJoints = null;
 
@@ -112,7 +113,7 @@ try {
         return { min, max };
       };
 
-      window.renderSample = ({ mode = 'playing', resumeMode = 'playing', distance = 60, dash = false, slow = false, outcome = null, frames = 1, dt = 0.05, impactMode = 'arcade', runImpactMode = impactMode, reducedMotion = false, launchProgress = 1, nearTimer = 0, pickupTimer = 0, fallIntensity = 0.5, fixture = null, authoredDistance = null, expectHunterStage = null, expectedPhysicsTime = null, expectContact = false, introTime = null, skipIntro = false }) => {
+      window.renderSample = ({ mode = 'playing', resumeMode = 'playing', distance = 60, dash = false, slow = false, outcome = null, frames = 1, dt = 0.05, impactMode = 'arcade', runImpactMode = impactMode, reducedMotion = false, launchProgress = 1, nearTimer = 0, pickupTimer = 0, fallIntensity = 0.5, fixture = null, authoredDistance = null, expectHunterStage = null, expectedPhysicsTime = null, expectContact = false, introTime = null, skipIntro = false, district = null }) => {
         let state = authoredDistance === null ? structuredClone(game.state) : authoredState(authoredDistance);
         if (introTime !== null) {
           const introGame = new RainGame({ saved: { impactMode, reducedMotion } });
@@ -135,6 +136,7 @@ try {
           launchProgress, nearTimer, pickupTimer, fallIntensity,
           fallSpeed: state.fallSpeed || state.speed,
         });
+        if (district !== null) state.district = district;
         if (authoredDistance === null) {
           for (const hazard of state.hazards) {
             hazard.y = PLAYER_Y + distance - hazard.at;
@@ -176,6 +178,7 @@ try {
             locked: type === 'hunter', stage: retract ? 'passed' : stage === 'telegraph' ? 'locked' : 'reaching',
             passed: retract,
           }];
+          state.caughtBy = mode === 'caught' ? { id: 'one-window-two-arms', type, x: 0.95, at: 60 } : null;
         } else if (fixture === 'pickups') {
           state.hazards = [];
           state.pickups = [
@@ -214,6 +217,15 @@ try {
           if (vertices?.some(value => !Number.isFinite(value))) nonFiniteGeometryCount++;
         });
         const visualFailures = [...pauseFailures];
+        if (district !== null) {
+          if (scene.district !== district) visualFailures.push('scene reads the selected district');
+          const signature = `${scene.materials.get('wall')?.color.getHex()}:${scene.scene.fog.color.getHex()}`;
+          if (district === 0) districtColors.clear();
+          districtColors.add(signature);
+          if (district === 4 && districtColors.size !== 5) visualFailures.push('five districts have distinct palettes');
+        }
+        if (mode === 'caught' && state.caughtBy && (scene.captureHighlight !== state.caughtBy.id || scene.hands.filter(actor => actor.group.visible && actor.caught).length !== 1)) visualFailures.push('caught highlights exactly the resident that captured the heroine');
+        if (mode !== 'caught' && scene.captureHighlight !== null) visualFailures.push('capture highlight clears outside caught');
         if (scene.resources.size !== resourceCount) visualFailures.push('repeated render effects keep the resource pool bounded');
         const hardWin = runImpactMode === 'hard' && outcome === 'win' && ['impact', 'result'].includes(mode);
         const effectiveVisible = object => {
@@ -345,7 +357,7 @@ try {
             if (!previous || !near(average.z, 3) || palmPositions.some((point, side) => Math.hypot(point.x - previous[side].x, point.z - previous[side].z) > 0.02)) visualFailures.push(`${prefix}: first passed frame continues the active reach without snapping to the window`);
           }
           if (fixture?.endsWith(':retract-finish') && (average.z >= 1 || !near(average.x, hazard.baseX))) visualFailures.push(`${prefix}: completed retraction brings both palms back to their owner`);
-          if (hazard.type !== 'hunter' && actor.target.visible || hazard.passed && actor.target.visible) visualFailures.push(`${prefix}: pooled normal or passed people hide the hunter target`);
+          if (!actor.caught && (hazard.type !== 'hunter' && actor.target.visible || hazard.passed && actor.target.visible)) visualFailures.push(`${prefix}: pooled normal or passed people hide the hunter target`);
           if (!near(left.thumb.position.x, -right.thumb.position.x) || left.thumb.position.x <= 0 || right.thumb.position.x >= 0 || !near(left.thumb.rotation.z, -right.thumb.rotation.z)) visualFailures.push(`${prefix}: thumbs mirror inward across the two palms`);
           for (const arm of actor.arms) {
             const limbNodes = [arm.shoulder, arm.upper, arm.lower, arm.elbow, arm.wrist, arm.cuff, arm.palm, arm.palmMesh, arm.thumb];
@@ -451,7 +463,7 @@ try {
           playerPosition: scene.player.position.toArray(), visibleHunters: state.hazards.filter(hazard => hazard.type === 'hunter' && hazard.warning > 0).map(hazard => hazard.stage),
           hunterStates: state.hazards.filter(hazard => hazard.type === 'hunter' && hazard.warning > 0).map(hazard => ({ stage: hazard.stage, phase: hazard.phase, x: hazard.x, y: hazard.y, targetX: hazard.targetX, locked: hazard.locked })),
           resourceCount: scene.resources.size, drawCalls: scene.renderer.info.render.calls,
-          pairedActors, hardLanding, introPose, introTime, resumeMode, skipIntro, cameraPosition: scene.camera.position.toArray(), cameraQuaternion: scene.camera.quaternion.toArray(),
+          pairedActors, hardLanding, introPose, introTime, resumeMode, skipIntro, district: scene.district, captureHighlight: scene.captureHighlight, cameraPosition: scene.camera.position.toArray(), cameraQuaternion: scene.camera.quaternion.toArray(),
         };
       };
       window.disposeRenderSample = () => {
@@ -511,9 +523,12 @@ try {
       { name: 'paired-caught', distance: 60, mode: 'caught', outcome: 'caught', fixture: 'pair-grab:reaching' },
       { name: 'paired-paused', distance: 60, mode: 'paused', fixture: 'pair-grab:reaching' },
       { name: 'paired-menu-reused-slots', mode: 'menu', distance: 0 },
+      ...[0, 1, 2, 3, 4].map(district => ({ name: `district-${district + 1}`, district, distance: 60 })),
+      { name: 'district-retry-reused-slots', district: 0, distance: 60 },
     ];
     for (const scenario of cases.map(scenario => ({ impactMode: 'arcade', runImpactMode: 'arcade', ...scenario }))) {
       const sample = await page.evaluate(scenario => window.renderSample(scenario), scenario);
+      if (scenario.district !== undefined) sample.suite = 'district';
       sample.name = `${viewport.name}-${scenario.name}`;
       samples.push(sample);
       await page.screenshot({ path: path.join(output, `render-${label}-${sample.name}.png`) });
@@ -611,6 +626,7 @@ try {
   assert.equal(samples.filter(sample => !sample.suite).length, 98, 'All 98 original arcade render cases remain explicit defaults');
   assert.equal(samples.filter(sample => sample.suite === 'hard').length, 56, 'All 56 existing hard landing render cases remain covered');
   assert.equal(samples.filter(sample => sample.suite === 'intro').length, 24, 'Intro stages, pause, skip, hard cleanup, reduced motion and resize cover both DPRs');
+  assert.equal(samples.filter(sample => sample.suite === 'district').length, 12, 'Five district palettes and repeated pool reuse cover both DPRs');
   const failures = samples.filter(sample => sample.glError !== 0 || sample.nonFiniteObjects.length || sample.nonFiniteGeometryCount || sample.visualFailures.length || (sample.largest.width >= 32 && sample.largest.height >= 32));
   await writeFile(path.join(output, `render-${label}-report.json`), JSON.stringify({ passed: !failures.length && !errors.length, errors, failures: failures.map(sample => sample.name), samples }, null, 2));
   await writeFile(path.join(output, `render-hard-${label}-report.json`), JSON.stringify({ passed: !failures.some(sample => sample.suite === 'hard') && !errors.length, errors, failures: failures.filter(sample => sample.suite === 'hard').map(sample => sample.name), samples: samples.filter(sample => sample.suite === 'hard') }, null, 2));

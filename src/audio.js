@@ -22,6 +22,7 @@ export class RainAudio {
     this.mode = 'menu';
     this.pan = 0;
     this.cueUntil = 0;
+    this.comboLevel = 0;
   }
 
   async unlock() {
@@ -142,6 +143,7 @@ export class RainAudio {
 
   setMuted(muted) {
     this.muted = Boolean(muted);
+    if (this.muted) this._stopCombo();
     if (!this.ctx || this.disposed) return;
     this.master.gain.setTargetAtTime(this.muted ? 0 : 0.68, this.ctx.currentTime, 0.07);
   }
@@ -150,6 +152,9 @@ export class RainAudio {
     if (this.mode !== state.mode) this.paramClock = 0;
     this.mode = state.mode;
     this.pan = clamp((state.x || 0) / 10, -0.7, 0.7);
+    const comboLevel = state.mode === 'playing' && !this.muted ? state.combo >= 6 ? 2 : state.combo >= 3 ? 1 : 0 : 0;
+    if (!comboLevel && this.comboLevel) this._stopCombo();
+    this.comboLevel = comboLevel;
     if (!this.ctx || this.ctx.state !== 'running' || this.disposed) return;
     const now = this.ctx.currentTime;
     this.paramClock -= dt;
@@ -188,13 +193,17 @@ export class RainAudio {
       const beat = this.step % 8;
       const note = beat === 0 ? chord[0] + 24 : beat === 3 ? chord[2] + 24 : beat === 6 ? chord[3] + 24 : null;
       if (note !== null) this._tone(hz(note), this.nextNote, 1.65, beat === 0 ? 0.055 : 0.034, 'sine', this.music, 0, beat === 3 ? 0.32 : -0.25, 0.35);
+      if (this.comboLevel && (beat % 2 === 1 || this.comboLevel === 2)) {
+        const upperNote = chord[Math.floor(beat / 2) % chord.length] + 36;
+        this._tone(hz(upperNote), this.nextNote, 0.3, this.comboLevel === 2 ? 0.024 : 0.016, 'triangle', this.music, 0, beat % 4 < 2 ? -0.3 : 0.3, 0, 'combo');
+      }
       this.nextNote += 60 / 56 / 2;
       this.step++;
     }
   }
 
   // Short voices are capped and disconnect themselves; no audio nodes are made per frame.
-  _tone(frequency, at, duration, volume, type = 'sine', target = this.effects, glide = 0, pan = this.pan, wet = 0.12) {
+  _tone(frequency, at, duration, volume, type = 'sine', target = this.effects, glide = 0, pan = this.pan, wet = 0.12, layer = null) {
     if (this.voices.size >= 28) return;
     const ctx = this.ctx;
     const oscillator = ctx.createOscillator();
@@ -214,14 +223,14 @@ export class RainAudio {
     send.gain.value = wet;
     panner.connect(send);
     send.connect(this.echo);
-    const voice = { source: oscillator, nodes: [oscillator, envelope, panner, send] };
+    const voice = { source: oscillator, nodes: [oscillator, envelope, panner, send], layer };
     this.voices.add(voice);
     oscillator.onended = () => this._release(voice);
     oscillator.start(at);
     oscillator.stop(at + duration + 0.03);
   }
 
-  _hush(at, duration, volume, from, to, type = 'bandpass', attack = 0.035) {
+  _hush(at, duration, volume, from, to, type = 'bandpass', attack = 0.035, pan = this.pan) {
     if (this.voices.size >= 28) return;
     const ctx = this.ctx;
     const source = ctx.createBufferSource();
@@ -235,10 +244,13 @@ export class RainAudio {
     envelope.gain.setValueAtTime(0.0001, at);
     envelope.gain.exponentialRampToValueAtTime(volume, at + Math.min(attack, duration * 0.25));
     envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+    const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain();
+    if (panner.pan) panner.pan.value = pan;
     source.connect(filter);
     filter.connect(envelope);
-    envelope.connect(this.effects);
-    const voice = { source, nodes: [source, filter, envelope] };
+    envelope.connect(panner);
+    panner.connect(this.effects);
+    const voice = { source, nodes: [source, filter, envelope, panner] };
     this.voices.add(voice);
     source.onended = () => this._release(voice);
     source.start(at, Math.random() * 2);
@@ -250,9 +262,21 @@ export class RainAudio {
     this.voices.delete(voice);
   }
 
-  play(name) {
+  _stopCombo() {
+    this.comboLevel = 0;
+    for (const voice of this.voices) {
+      if (voice.layer !== 'combo') continue;
+      voice.source.onended = null;
+      voice.source.stop();
+      this._release(voice);
+    }
+  }
+
+  play(name, detail = {}) {
+    if (['start', 'pause', 'catch', 'impact', 'win'].includes(name)) this._stopCombo();
     if (!this.ctx || this.ctx.state !== 'running' || this.muted || this.disposed) return;
     const at = this.ctx.currentTime + 0.006;
+    const cuePan = Number.isFinite(detail?.x) ? clamp(detail.x / 8, -0.8, 0.8) : this.pan;
     if (name === 'tracking' || name === 'lock' || name === 'near') {
       this.cueUntil = at + 0.28;
       this.paramClock = 0;
@@ -275,12 +299,12 @@ export class RainAudio {
       this._tone(hz(86), at, 0.45, 0.075);
       this._tone(hz(93), at + 0.045, 0.26, 0.027);
     } else if (name === 'tracking') {
-      this._tone(hz(67), at, 0.12, 0.048, 'triangle', this.effects, 0, this.pan, 0);
-      this._tone(hz(70), at + 0.15, 0.14, 0.045, 'triangle', this.effects, 0, this.pan, 0);
+      this._tone(hz(67), at, 0.12, 0.048, 'triangle', this.effects, 0, cuePan, 0);
+      this._tone(hz(70), at + 0.15, 0.14, 0.045, 'triangle', this.effects, 0, cuePan, 0);
     } else if (name === 'lock') {
-      this._hush(at, 0.085, 0.12, 2400, 1100, 'bandpass', 0.005);
-      this._tone(930, at, 0.09, 0.075, 'triangle', this.effects, 460, this.pan, 0);
-      this._tone(hz(78), at + 0.015, 0.14, 0.035, 'sine', this.effects, 0, this.pan, 0);
+      this._hush(at, 0.085, 0.12, 2400, 1100, 'bandpass', 0.005, cuePan);
+      this._tone(930, at, 0.09, 0.075, 'triangle', this.effects, 460, cuePan, 0);
+      this._tone(hz(78), at + 0.015, 0.14, 0.035, 'sine', this.effects, 0, cuePan, 0);
     } else if (name === 'risk') {
       [69, 74, 78].forEach((note, index) => this._tone(hz(note), at + index * 0.025, 0.52, index === 0 ? 0.068 : 0.043, 'sine', this.effects, 0, this.pan, 0.16));
       this._tone(hz(90), at + 0.05, 0.27, 0.035, 'sine', this.effects, 0, this.pan, 0.1);

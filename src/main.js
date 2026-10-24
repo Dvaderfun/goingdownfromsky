@@ -9,7 +9,7 @@ import '@fontsource/space-grotesk/latin-400.css';
 import '@fontsource/space-grotesk/latin-600.css';
 import '@fontsource/ibm-plex-mono/latin-400.css';
 import './style.css';
-import { RainGame, parseSave } from './game.js';
+import { RainGame, parseSave, dailyChallenge } from './game.js';
 import { RainScene } from './scene.js';
 import { GameUI } from './ui.js';
 import { RainAudio } from './audio.js';
@@ -27,19 +27,19 @@ function localStorageAvailable() {
 
 let ui;
 const audio = new RainAudio();
-const game = new RainGame({ saved, onEvent: name => {
+const game = new RainGame({ saved, onEvent: (name, detail) => {
   if (name === 'save') { save(); return; }
-  audio.play(name);
-  if (name === 'near') ui?.toast(`БЛИЗЬКО! ×${game.state.combo}`, 'near');
-  if (name === 'drop') ui?.toast('+ КРАПЛЯ · + ФОКУС', 'drop');
-  if (name === 'risk') ui?.toast(`РИЗИК ОКУПИВСЯ · ×${game.state.combo}`, 'risk');
+  audio.play(name, detail);
+  if (name === 'near') ui?.toast(`БЛИЗЬКО! ×${game.state.combo} · +13% ФОКУСУ`, 'near');
+  if (name === 'drop') ui?.toast(`+${100 + game.state.combo * 20} ОЧОК · +18% ФОКУСУ`, 'drop');
+  if (name === 'risk') ui?.toast(`РИЗИК ×${game.state.combo} · +${250 + game.state.combo * 40} ОЧОК · +26% ФОКУСУ`, 'risk');
   if (name === 'tracking') ui?.toast('СТЕЖИТЬ → СПАЛАХ → ЗМІНИ КУРС', 'hunter');
 } });
 audio.setMuted(saved.muted);
 
 function save() {
-  const { bestScore, unlockedLevel, muted, reducedMotion, levelRecords, impactMode } = game.state;
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ bestScore, unlockedLevel, muted, reducedMotion, levelRecords, impactMode })); }
+  const { bestScore, unlockedLevel, muted, reducedMotion, levelRecords, dailyRecords, impactMode } = game.state;
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ bestScore, unlockedLevel, muted, reducedMotion, levelRecords, dailyRecords, impactMode })); }
   catch { /* The session remains playable when browser storage is unavailable. */ }
 }
 
@@ -65,17 +65,23 @@ function clearInput() {
   game.resetInput();
 }
 
-function start(level) {
+function start(level, seed, options) {
   clearInput();
   document.activeElement?.blur?.();
   unlockAudio();
-  game.start(level);
+  game.start(level, seed, options);
+}
+
+function startDaily() {
+  const challenge = dailyChallenge();
+  start(challenge.level, challenge.seed, { dailyDate: challenge.date });
 }
 
 ui = new GameUI(document.querySelector('#ui'), {
   start: level => start(Number.isInteger(level) ? Math.max(1, Math.min(level, game.state.unlockedLevel)) : game.state.unlockedLevel),
-  retry: () => start(game.state.level),
-  next: () => start(game.state.level + 1),
+  daily: startDaily,
+  retry: () => start(game.state.level, game.seed, { dailyDate: game.state.dailyDate }),
+  next: () => { if (!game.state.dailyDate) start(Math.min(10000, game.state.level + 1)); },
   menu: () => { clearInput(); game.menu(); },
   pause: () => { clearInput(); game.pause(); },
   resume: () => { clearInput(); document.activeElement?.blur?.(); game.resume(); },

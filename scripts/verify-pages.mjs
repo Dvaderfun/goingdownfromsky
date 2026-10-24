@@ -82,6 +82,7 @@ async function boot(page, url, name, baseUrl) {
 }
 
 async function action(page, name) {
+  await page.waitForFunction(() => document.querySelector('#ui')?.dataset.mode === window.__RAIN_PAIN__.snapshot().mode);
   const selector = `[data-action="${name}"]:visible`;
   const dialog = page.locator('[role="dialog"]:visible').locator(selector);
   await (await dialog.count() ? dialog.first() : page.locator(selector).first()).click();
@@ -160,7 +161,18 @@ try {
   await page.keyboard.press('Space');
   assert.equal((await snapshot(page)).mode, 'playing', 'Keyboard skip works on the deployed mobile layout');
   assert.equal((await snapshot(page)).dashCooldown, 0);
+  await page.keyboard.press('Escape');
+  await action(page, 'menu');
+  await action(page, 'daily');
+  assert.match((await snapshot(page)).dailyDate, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal((await snapshot(page)).mode, 'intro', 'Daily challenge starts under the Pages prefix');
+  await action(page, 'skipIntro');
+  assert.equal((await snapshot(page)).mode, 'playing');
+  assert.equal((await snapshot(page)).level, 3);
+  await page.keyboard.press('Escape');
+  await action(page, 'menu');
   report.checks.push('Current release: mode preference, rooftop intro, frozen clocks and HUD, intro pause/resume, button and keyboard skips, movement, dash, mobile selector and intro layout');
+  report.checks.push('Current release: mobile daily challenge and rooftop skip under Pages prefix');
 
   const archive = await context.newPage();
   const archiveUrl = new URL('releases/arcade-0.2.1/', url).href;

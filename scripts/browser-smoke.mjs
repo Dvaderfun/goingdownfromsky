@@ -19,6 +19,10 @@ let page;
 const errors = [];
 const snapshots = {};
 const snapshot = () => page.evaluate(() => window.__RAIN_PAIN__.snapshot());
+const layoutSignature = state => JSON.stringify({
+  hazards: state.hazards.map(({ at, baseX, type, phase }) => ({ at, baseX, type, phase })),
+  pickups: state.pickups.map(({ at, x, risk }) => ({ at, x, risk })),
+});
 
 async function action(name) {
   const selector = `[data-action="${name}"]:visible`;
@@ -179,6 +183,7 @@ try {
   assert.ok(snapshots.hunterSeen, 'Authored first tower introduces and locks a hunter');
   assert.ok(snapshots.win.riskDrops > 0, 'Real keyboard route collects risk drops');
   assert.ok(['C', 'B', 'A', 'S'].includes(snapshots.win.lastResult.grade));
+  assert.ok(snapshots.win.lastResult.style.goal, 'Style gives a concrete replay goal');
   assert.equal(snapshots.win.levelRecords['1'].score, snapshots.win.score);
   await page.waitForTimeout(500);
   assert.equal(await page.locator('#result-title').textContent(), 'На вулиці rain — на душі pain');
@@ -193,12 +198,15 @@ try {
   assert.equal((await snapshot()).mode, 'playing', 'Enter skips the next tower opening');
   snapshots.caught = await steerUntilResult('caught');
   assert.equal(snapshots.caught.outcome, 'caught');
+  assert.ok(snapshots.caught.lastResult.caughtBy?.id, 'Loss identifies the window that caught the heroine');
+  assert.ok(snapshots.caught.lastResult.progress > 0 && snapshots.caught.lastResult.progress < 1);
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(output, 'desktop-caught.png') });
   await action('retry');
   assert.equal((await snapshot()).level, 2);
   assert.equal((await snapshot()).outcome, null);
   assert.equal((await snapshot()).mode, 'intro');
+  assert.equal(layoutSignature(await snapshot()), layoutSignature(snapshots.caught), 'Retry repeats the same layout for practice');
   await page.evaluate(() => document.activeElement?.blur());
   await page.keyboard.press('Space');
   assert.equal((await snapshot()).mode, 'playing', 'Space skips a fresh retry without consuming dash');
@@ -272,8 +280,41 @@ try {
   await page.waitForFunction(() => !window.__RAIN_PAIN__.snapshot().slow);
   await page.screenshot({ path: path.join(output, 'mobile-game.png') });
   snapshots.mobile = await snapshot();
+  assert.doesNotMatch(await page.locator('[data-ref="tutorialHint"]').textContent(), /Space|Shift|A \/ D/i, 'Touch tutorial uses touch controls');
   await page.keyboard.press('Escape');
   await page.screenshot({ path: path.join(output, 'mobile-pause.png') });
+  await action('menu');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const beforeDaily = await snapshot();
+  await action('daily');
+  snapshots.dailyStart = await snapshot();
+  assert.match(snapshots.dailyStart.dailyDate, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(snapshots.dailyStart.level, 3);
+  assert.equal(snapshots.dailyStart.mode, 'intro', 'Daily challenge has the same rooftop opening');
+  await action('skipIntro');
+  snapshots.dailyWin = await steerUntilResult('win');
+  assert.equal(snapshots.dailyWin.outcome, 'win');
+  assert.equal(snapshots.dailyWin.unlockedLevel, beforeDaily.unlockedLevel, 'Daily does not unlock normal towers');
+  assert.equal(snapshots.dailyWin.bestScore, beforeDaily.bestScore, 'Daily has an independent record');
+  assert.deepEqual(snapshots.dailyWin.levelRecords, beforeDaily.levelRecords);
+  assert.equal(snapshots.dailyWin.dailyRecords[snapshots.dailyStart.dailyDate].score, snapshots.dailyWin.score);
+  assert.equal(await page.locator('[data-action="next"]').isVisible(), false, 'Daily result repeats today instead of advancing');
+  await page.screenshot({ path: path.join(output, 'daily-result.png') });
+  await action('retry');
+  assert.equal((await snapshot()).dailyDate, snapshots.dailyStart.dailyDate);
+  assert.equal(layoutSignature(await snapshot()), layoutSignature(snapshots.dailyStart), 'Daily retry repeats the same challenge');
+  await action('menu');
+  await page.reload();
+  await page.waitForFunction(() => window.__RAIN_PAIN__);
+  assert.deepEqual((await snapshot()).dailyRecords, snapshots.dailyWin.dailyRecords, 'Daily record survives reload');
+  await page.setViewportSize({ width: 360, height: 640 });
+  await page.waitForTimeout(150);
+  await page.locator('[data-action="daily"]').scrollIntoViewIfNeeded();
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Compact daily menu has no horizontal overflow');
+  await page.screenshot({ path: path.join(output, 'daily-compact-menu.png') });
+  await action('daily');
+  assert.equal((await snapshot()).dailyDate, snapshots.dailyStart.dailyDate, 'Compact touch menu starts today\'s challenge');
+  await action('menu');
   const archivePage = await context.newPage();
   archivePage.on('pageerror', error => errors.push(error.message));
   archivePage.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
@@ -285,7 +326,7 @@ try {
   await archivePage.close();
   assert.deepEqual(errors, [], 'No runtime or console errors');
   await writeFile(path.join(output, 'browser-report.json'), JSON.stringify({ passed: true, errors, snapshots }, null, 2));
-  console.log('Browser checks passed: natural rooftop intro, frozen intro inputs and camera, pause/resume, keyboard and touch skips, arcade and hard landings, mode preference, archived release, keyboard, abilities, win/catch/retry, saved progress, mobile layout and held touch controls. Screenshots: artifacts/');
+  console.log('Browser checks passed: rooftop intro, pause/skip, arcade/hard, keyboard/touch, style goals, caught feedback, deterministic retry, isolated daily win/record/reload and compact menu, archived release. Screenshots: artifacts/');
 } catch (error) {
   if (page) {
     try {
