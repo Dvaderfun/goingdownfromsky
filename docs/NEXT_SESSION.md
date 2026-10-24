@@ -1,5 +1,9 @@
 # Наступна сесія
 
+## Публікація — 24.10.2026
+
+Гра опублікована: https://dvaderfun.github.io/goingdownfromsky/. Стара аркада: https://dvaderfun.github.io/goingdownfromsky/releases/arcade-0.2.1/. Репозиторій — https://github.com/Dvaderfun/goingdownfromsky; push у main автоматично збирає й публікує Pages. Перший run 40090669930 успішний, локальна й live Pages перевірки пройшли без 404/помилок WebGL/браузера. Vite base './', archive включений у dist, процедура — `docs/DEPLOYMENT.md`. Після змін ресурсу або публікації запускай `npm run build` і `npm run test:pages`; live-перевірка приймає URL аргументом.
+
 Оновлено: 24 жовтня 2026. Версія: 0.3.0. Ітерацію 04 реалізовано; 33 Node-тести, останній production build, 154 render-стани та focused interactive browser-прохід пройшли.
 
 ## Поточна ітерація 04 — стилі приземлення

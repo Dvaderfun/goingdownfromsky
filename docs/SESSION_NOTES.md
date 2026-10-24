@@ -1,5 +1,11 @@
 # Сесії — 23–24.10.2026
 
+## GitHub Pages — 24.10.2026
+
+Створено Git-репозиторій і опубліковано https://github.com/Dvaderfun/goingdownfromsky. Pages URL — https://dvaderfun.github.io/goingdownfromsky/; archive — `/goingdownfromsky/releases/arcade-0.2.1/`. Official Actions workflow виконує Node-тести/build/deploy після push у main. Перший run 40090669930 має success для обох jobs.
+
+Для Pages додано relative base, favicon prefix, включення archive у dist та notices third-party залежностей. Перевірено production під штучним `/goingdownfromsky/` і на живому GitHub.io: обидві версії запускаються, JS/CSS/fonts/favicon доступні, рух/пауза/ривок, збереження режиму й phone selector працюють; errors=[], failed resources=[], escaped prefix=[]. Звіт — `artifacts/pages-report.json`; процедура — `docs/DEPLOYMENT.md`.
+
 ## Ітерація 04 — два стилі приземлення, версія 0.3.0
 
 Аркадний фінал зі спалахом, кільцями та частинками лишився режимом за замовчуванням. У меню можна обрати жорсткий фінал із фізичним ragdoll і кров’ю; налаштування зберігається в `rain-pain:v1`. `runImpactMode` фіксує вибір при старті спроби, а `lastResult.runImpactMode` зберігає його для панелі результату. Колізії, scoring, прогресія й модель однієї людини з двома руками не змінилися.

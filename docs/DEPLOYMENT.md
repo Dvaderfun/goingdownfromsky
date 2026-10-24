@@ -20,4 +20,8 @@ npm run test:pages -- https://dvaderfun.github.io/goingdownfromsky/
 
 Локальна перевірка піднімає лише готовий `dist` під `/goingdownfromsky/`; запити поза ним отримують 404. Вона перевіряє WebGL, JS/CSS/шрифти/favicon, керування, збереження режиму, мобільний перемикач та незалежну аркаду. Для браузерних перевірок локально потрібен встановлений Edge; CI на Ubuntu запускає Node-тести та build. Ігрові/render-тести залишаються окремими gates, описаними в README.
 
-Фактичний підсумок першого deploy буде записано в `docs/NEXT_SESSION.md` після завершення GitHub Actions і live-перевірки.
+## Перша публікація — 24.10.2026
+
+Опубліковано commit `f061a695b3a2195ccea54dbdc16a5af0307b7605`. [GitHub Actions run 40090669930](https://github.com/Dvaderfun/goingdownfromsky/actions/runs/40090669930) завершив build і deploy з success; Node-тести й production build пройшли на Ubuntu/Node 24.
+
+Локальний `npm run test:pages` і live `npm run test:pages -- https://dvaderfun.github.io/goingdownfromsky/` пройшли. У двох версіях завантажуються WebGL, JS/CSS, шрифти й favicon; перевірені керування, пауза/ривок, збереження режиму, phone selector і запуск старої аркади. Немає browser errors, невдалих ресурсів або запитів поза Pages prefix. Локальний звіт — `artifacts/pages-report.json` (останній live-прогін).
